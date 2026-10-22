@@ -1,0 +1,11 @@
+{
+  "run_dir":"data\\runs\\live900-BTCUSDT-20261022",
+  "summary_result":"PASS",
+  "verified":true,
+  "raw_records_computed":24903,
+  "raw_bytes_computed":19881198,
+  "raw_sha256_computed":"5836675014897976d47654e8d0fde5f765f7ff129d0ecba9c413d5c5a82919b8",
+  "checks":{"summary_result_pass":true,"raw_frames_exist":true,"raw_sha256_matches_summary":true,"raw_records_match_summary":true,"raw_payload_hashes_valid":true,"collector_raw_integrity_verified":true,"artifact_hashes_match":true},
+  "artifacts":[{"name":"factors.jsonl","ok":true,"expected":"3bf57c187d1d43b183e6fc5665154c367ac98bf557b58a32991bd39f383500a1","actual":"3bf57c187d1d43b183e6fc5665154c367ac98bf557b58a32991bd39f383500a1"},{"name":"normalized_events.jsonl","ok":true,"expected":"b5a2e245d3f589d0da7c3f0360d6c20901a78c75835c111672bbde80d8e16bc0","actual":"b5a2e245d3f589d0da7c3f0360d6c20901a78c75835c111672bbde80d8e16bc0"},{"name":"raw_frames.jsonl","ok":true,"expected":"5836675014897976d47654e8d0fde5f765f7ff129d0ecba9c413d5c5a82919b8","actual":"5836675014897976d47654e8d0fde5f765f7ff129d0ecba9c413d5c5a82919b8"},{"name":"signals.jsonl","ok":true,"expected":"fa77b1f2296b2e35f4629ec343c49277cec928f656237717247702f266cf9ae9","actual":"fa77b1f2296b2e35f4629ec343c49277cec928f656237717247702f266cf9ae9"},{"name":"system.log","ok":true,"expected":"4e8932968d9a0224b61f82793dee8264a5fae4092b991cdf60bf14b40ee8ae97","actual":"4e8932968d9a0224b61f82793dee8264a5fae4092b991cdf60bf14b40ee8ae97"}],
+  "errors":[]
+}

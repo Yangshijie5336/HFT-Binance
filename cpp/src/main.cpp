@@ -1,61 +1,285 @@
 #include "marketpipe.hpp"
+
 #include <algorithm>
-#include <cmath>
-#include <iomanip>
+#include <cctype>
+#include <filesystem>
 #include <iostream>
-#include <regex>
-#include <sstream>
-#include <thread>
+#include <optional>
+#include <string>
+#include <vector>
+
+#include "marketpipe/runtime.hpp"
+
+namespace {
 
 namespace fs = std::filesystem;
-namespace marketpipe {
-namespace {
-std::string field(const std::string& s, const char* key) {
-  std::regex r(std::string("\\\"") + key + "\\\"\\s*:\\s*\\\"([^\\\"]*)\\\""); std::smatch m;
-  return std::regex_search(s, m, r) ? m[1].str() : "";
-}
-std::string raw_or_number(const std::string& s, const char* key) {
-  auto text = field(s, key); if (!text.empty()) return text;
-  std::regex r(std::string("\\\"") + key + "\\\"\\s*:\\s*([-+0-9.eE]+)"); std::smatch m;
-  return std::regex_search(s, m, r) ? m[1].str() : "";
-}
-double number(const std::string& v) { try { return std::stod(v); } catch (...) { return 0.0; } }
-std::string json_escape(const std::string& s) { std::string o; for (char c : s) { if (c=='"'||c=='\\') o+='\\'; o+=c; } return o; }
+
+std::string lower(std::string value) {
+  std::transform(value.begin(), value.end(), value.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return value;
 }
 
-Journal::Journal(const fs::path& path) { fs::create_directories(path.parent_path()); out_.open(path, std::ios::binary | std::ios::app); if (!out_) throw std::runtime_error("cannot open journal: " + path.string()); }
-void Journal::append(const std::string& payload, std::uint64_t seq, const std::string& run_id) {
-  auto now = std::chrono::system_clock::now().time_since_epoch();
-  auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now).count();
-  out_ << "{\"run_id\":\"" << json_escape(run_id) << "\",\"frame_seq\":" << seq
-       << ",\"received_monotonic_ns\":" << ns << ",\"payload\":\"" << json_escape(payload) << "\"}\n";
-  out_.flush(); records_++; if (!out_) throw std::runtime_error("journal write failed");
-}
-void Journal::close() { out_.flush(); out_.close(); }
-
-std::optional<Trade> parse_binance_trade(const std::string& json, std::uint64_t frame_seq) {
-  if (field(json, "e") != "trade") return std::nullopt;
-  Trade t; t.symbol=field(json,"s"); t.id=raw_or_number(json,"t"); t.price_text=raw_or_number(json,"p"); t.qty_text=raw_or_number(json,"q");
-  auto maker=field(json,"m"); if (maker.empty()) { std::regex r("\\\"m\\\"\\s*:\\s*(true|false)"); std::smatch m; if(std::regex_search(json,m,r)) maker=m[1].str(); }
-  t.side = maker == "true" ? "sell" : "buy"; t.exchange_time=raw_or_number(json,"T"); t.price=number(t.price_text); t.qty=number(t.qty_text); t.frame_seq=frame_seq;
-  if(t.symbol.empty()||t.id.empty()||t.price<=0||t.qty<=0||t.exchange_time.empty()) return std::nullopt;
-  return t;
-}
-Factors FactorEngine::update(const Trade& t) {
-  window_.push_back(t); prices_.push_back(t.price); if(t.side=="buy") buy_qty_+=t.qty; else sell_qty_+=t.qty;
-  while(window_.size()>30){ auto old=window_.front(); window_.pop_front(); if(old.side=="buy") buy_qty_-=old.qty; else sell_qty_-=old.qty; }
-  while(prices_.size()>21) prices_.pop_front();
-  double total=buy_qty_+sell_qty_;
-  Factors f; f.window_trades=window_.size(); f.imbalance=total>0?(buy_qty_-sell_qty_)/total:0; f.return_n=prices_.size()>1?prices_.back()/prices_.front()-1:0; f.rate_10s=window_.size()/10.0; f.average_size=window_.empty()?0:total/window_.size(); return f;
-}
-Signal evaluate(const Factors& f) { if(f.imbalance>=.15&&f.return_n>=.0001) return {"BUY_SIGNAL","positive_trade_imbalance_and_momentum",std::clamp(f.imbalance*.7+f.return_n*300.,-1.,1.)}; if(f.imbalance<=-.15&&f.return_n<=-.0001) return {"SELL_SIGNAL","negative_trade_imbalance_and_momentum",std::clamp(f.imbalance*.7+f.return_n*300.,-1.,1.)}; return {"HOLD","thresholds_not_aligned",std::clamp(f.imbalance*.7+f.return_n*300.,-1.,1.)}; }
-
-int replay(const fs::path& input, const fs::path& output) {
-  std::ifstream in(input); if(!in){std::cerr<<"cannot open input\n";return 2;} fs::create_directories(output); std::ofstream events(output/"normalized_events.jsonl"), signals(output/"signals.jsonl"); std::string line; std::uint64_t seq=0, valid=0; FactorEngine engine; std::unordered_set<std::string> seen;
-  while(std::getline(in,line)){ auto payload=field(line,"payload"); if(payload.empty()) continue; auto t=parse_binance_trade(payload,++seq); if(!t||!seen.insert(t->symbol+":"+t->id).second) continue; valid++; auto f=engine.update(*t); auto s=evaluate(f); events<<"{\"symbol\":\""<<t->symbol<<"\",\"trade_id\":\""<<t->id<<"\",\"price\":"<<t->price<<",\"qty\":"<<t->qty<<"}\n"; signals<<"{\"action\":\""<<s.action<<"\",\"reason\":\""<<s.reason<<"\"}\n"; }
-  std::ofstream summary(output/"replay_summary.json"); summary<<"{\"result\":\"PASS\",\"trades_processed\":"<<valid<<",\"execution_enabled\":false}\n"; return 0;
-}
-int synthetic(std::size_t count) { FactorEngine e; auto start=std::chrono::steady_clock::now(); for(std::size_t i=0;i<count;i++){Trade t{"BTCUSDT",i%2?"sell":"buy",std::to_string(i),"67000.0","0.001","0",67000.0,0.001,i}; e.update(t);} auto sec=std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count(); std::cout<<"{\"benchmark_type\":\"SYNTHETIC_BENCHMARK\",\"events\":"<<count<<",\"events_per_second\":"<<(count/sec)<<"}\n"; return 0; }
+void print_help() {
+  std::cout
+      << "marketpipe " << marketpipe::kVersion << " (C++20)\n\n"
+      << "Commands:\n"
+      << "  capture   --symbol BTCUSDT --duration 900 --output-dir data/runs\n"
+      << "            [--ws-url URL] [--queue-capacity N] [--ring-capacity N]\n"
+      << "            [--fsync-every N] [--run-id ID] [--quiet]\n"
+      << "  replay    --input raw_frames.jsonl [--output-dir DIR]\n"
+      << "  benchmark --events 100000 [--mode all|parse|pipeline|persist]\n"
+      << "            [--output-dir data/benchmarks]\n"
+      << "  report    --run-dir data/runs/<run>\n"
+      << "  synthetic --events 100000   (legacy alias for the factor benchmark)\n\n"
+      << "The default capture endpoint is Binance Spot "
+         "wss://stream.binance.com:9443/ws/<symbol>@trade.\n"
+      << "Only public market data is used. Signals are labels; order execution is disabled.\n";
 }
 
-int main(int argc,char** argv){ if(argc<2||std::string(argv[1])=="--help"){std::cout<<"marketpipe (C++20) commands: capture, replay, synthetic\n"; return argc<2?0:0;} try {std::string cmd=argv[1]; if(cmd=="synthetic"){std::size_t n=100000; if(argc>=4&&std::string(argv[2])=="--events") n=std::stoull(argv[3]); return marketpipe::synthetic(n);} if(cmd=="replay"&&argc>=5&&std::string(argv[2])=="--input"){return marketpipe::replay(argv[3],argv[4]);} if(cmd=="capture"){std::cerr<<"BLOCKED: C++ build requires a WebSocket transport adapter; no live capture performed\n"; return 2;} std::cerr<<"invalid command\n"; return 2;} catch(const std::exception& e){std::cerr<<e.what()<<"\n";return 2;} }
+struct Arguments {
+  std::string command;
+  std::vector<std::string> positional;
+  std::vector<std::pair<std::string, std::string>> options;
+
+  std::optional<std::string> get(const std::string& name) const {
+    for (const auto& [key, value] : options) {
+      if (key == name) return value;
+    }
+    return std::nullopt;
+  }
+  std::string get_or(const std::string& name, const std::string& fallback) const {
+    auto value = get(name);
+    return value ? *value : fallback;
+  }
+  bool has(const std::string& name) const { return get(name).has_value(); }
+};
+
+bool parse_arguments(int argc, char** argv, Arguments& arguments, std::string& error) {
+  if (argc < 2) {
+    error = "missing command";
+    return false;
+  }
+  arguments.command = argv[1];
+  for (int i = 2; i < argc; ++i) {
+    const std::string token = argv[i];
+    if (token == "--help" || token == "-h") {
+      arguments.options.emplace_back("help", "true");
+      continue;
+    }
+    if (token.rfind("--", 0) == 0) {
+      const std::size_t equals = token.find('=');
+      if (equals != std::string::npos) {
+        arguments.options.emplace_back(token.substr(0, equals), token.substr(equals + 1));
+      } else if (i + 1 < argc && std::string(argv[i + 1]).rfind("--", 0) != 0) {
+        arguments.options.emplace_back(token, argv[++i]);
+      } else {
+        arguments.options.emplace_back(token, "true");
+      }
+    } else {
+      arguments.positional.push_back(token);
+    }
+  }
+  return true;
+}
+
+std::optional<std::uint64_t> parse_uint(const std::string& text) {
+  try {
+    std::size_t consumed = 0;
+    unsigned long long value = std::stoull(text, &consumed);
+    if (consumed != text.size()) return std::nullopt;
+    return value;
+  } catch (...) {
+    return std::nullopt;
+  }
+}
+
+std::optional<double> parse_double(const std::string& text) {
+  try {
+    std::size_t consumed = 0;
+    double value = std::stod(text, &consumed);
+    if (consumed != text.size()) return std::nullopt;
+    return value;
+  } catch (...) {
+    return std::nullopt;
+  }
+}
+
+std::string default_url(const std::string& symbol) {
+  return "wss://stream.binance.com:9443/ws/" + lower(symbol) + "@trade";
+}
+
+std::string default_run_id(const std::string& symbol) {
+  const std::string stamp = marketpipe::utc_now_iso();
+  std::string compact;
+  for (char c : stamp) {
+    if (c >= '0' && c <= '9') compact.push_back(c);
+  }
+  return compact.substr(0, 14) + "Z_" + symbol;
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+  using namespace marketpipe;
+  install_signal_handlers();
+
+  Arguments arguments;
+  std::string argument_error;
+  if (!parse_arguments(argc, argv, arguments, argument_error)) {
+    if (argc < 2) {
+      print_help();
+      return 0;
+    }
+    std::cerr << argument_error << '\n';
+    return 2;
+  }
+  if (arguments.command == "--help" || arguments.command == "-h" || arguments.has("--help")) {
+    print_help();
+    return 0;
+  }
+
+  try {
+    if (arguments.command == "capture") {
+      CaptureConfig config;
+      config.symbol = arguments.get_or("--symbol", "BTCUSDT");
+      if (config.symbol.empty()) {
+        std::cerr << "--symbol must not be empty\n";
+        return 2;
+      }
+      config.ws_url = arguments.get_or("--ws-url", default_url(config.symbol));
+      config.ca_file = arguments.get_or("--ca-file", "");
+      const auto duration_text = arguments.get("--duration");
+      if (duration_text) {
+        auto duration = parse_double(*duration_text);
+        if (!duration || *duration <= 0) {
+          std::cerr << "--duration must be a positive number\n";
+          return 2;
+        }
+        config.duration_seconds = *duration;
+      }
+      config.output_dir = arguments.get_or("--output-dir", "data/runs");
+      config.run_id = arguments.get_or("--run-id", "");
+      if (auto value = arguments.get("--queue-capacity")) {
+        auto parsed = parse_uint(*value);
+        if (!parsed || *parsed == 0) {
+          std::cerr << "--queue-capacity must be positive\n";
+          return 2;
+        }
+        config.queue_capacity = static_cast<std::size_t>(*parsed);
+      }
+      if (auto value = arguments.get("--ring-capacity")) {
+        auto parsed = parse_uint(*value);
+        if (!parsed || *parsed == 0) {
+          std::cerr << "--ring-capacity must be positive\n";
+          return 2;
+        }
+        config.ring_capacity = static_cast<std::size_t>(*parsed);
+      }
+      if (auto value = arguments.get("--fsync-every")) {
+        auto parsed = parse_uint(*value);
+        if (!parsed || *parsed == 0) {
+          std::cerr << "--fsync-every must be positive\n";
+          return 2;
+        }
+        config.fsync_every = static_cast<std::size_t>(*parsed);
+      }
+      if (auto value = arguments.get("--connect-timeout-ms")) {
+        auto parsed = parse_uint(*value);
+        if (!parsed || *parsed == 0) {
+          std::cerr << "--connect-timeout-ms must be positive\n";
+          return 2;
+        }
+        config.connect_timeout_ms = static_cast<int>(*parsed);
+      }
+      if (auto value = arguments.get("--idle-timeout-ms")) {
+        auto parsed = parse_uint(*value);
+        if (!parsed || *parsed == 0) {
+          std::cerr << "--idle-timeout-ms must be positive\n";
+          return 2;
+        }
+        config.idle_timeout_ms = static_cast<int>(*parsed);
+      }
+      if (auto value = arguments.get("--reconnect-initial")) {
+        auto parsed = parse_double(*value);
+        if (!parsed || *parsed < 0) {
+          std::cerr << "--reconnect-initial must be non-negative\n";
+          return 2;
+        }
+        config.reconnect_initial_seconds = *parsed;
+      }
+      if (auto value = arguments.get("--reconnect-max")) {
+        auto parsed = parse_double(*value);
+        if (!parsed || *parsed <= 0) {
+          std::cerr << "--reconnect-max must be positive\n";
+          return 2;
+        }
+        config.reconnect_max_seconds = *parsed;
+      }
+      if (auto value = arguments.get("--max-connect-failures")) {
+        auto parsed = parse_uint(*value);
+        if (!parsed || *parsed == 0) {
+          std::cerr << "--max-connect-failures must be positive\n";
+          return 2;
+        }
+        config.max_consecutive_connect_failures = static_cast<int>(*parsed);
+      }
+      config.console_logs = !arguments.has("--quiet");
+
+      CaptureSummary summary;
+      return run_capture(config, summary);
+    }
+
+    if (arguments.command == "replay") {
+      const auto input = arguments.get("--input");
+      if (!input) {
+        std::cerr << "replay requires --input <raw_frames.jsonl>\n";
+        return 2;
+      }
+      fs::path output = arguments.get_or("--output-dir", "");
+      if (output.empty() && !arguments.positional.empty()) output = arguments.positional.front();
+      if (output.empty()) {
+        output = fs::path("data/replays") / default_run_id("replay");
+      }
+      return replay(*input, output);
+    }
+
+    if (arguments.command == "benchmark" || arguments.command == "synthetic") {
+      const auto events_text = arguments.get("--events");
+      std::uint64_t events = 100000;
+      if (events_text) {
+        auto parsed = parse_uint(*events_text);
+        if (!parsed || *parsed == 0) {
+          std::cerr << "--events must be positive\n";
+          return 2;
+        }
+        events = *parsed;
+      }
+      if (arguments.command == "synthetic") {
+        return synthetic(static_cast<std::size_t>(events));
+      }
+      const std::string mode = arguments.get_or("--mode", "all");
+      const fs::path output = arguments.get_or("--output-dir", "data/benchmarks");
+      return run_benchmark(static_cast<std::size_t>(events), mode, output);
+    }
+
+    if (arguments.command == "report") {
+      const auto run_dir = arguments.get("--run-dir");
+      if (!run_dir) {
+        std::cerr << "report requires --run-dir <run directory>\n";
+        return 2;
+      }
+      std::string output;
+      const int code = run_report(*run_dir, true, output);
+      std::cout << output;
+      return code;
+    }
+
+    std::cerr << "invalid command: " << arguments.command << "\n";
+    print_help();
+    return 2;
+  } catch (const std::exception& error) {
+    std::cerr << "fatal: " << error.what() << '\n';
+    return 2;
+  }
+}

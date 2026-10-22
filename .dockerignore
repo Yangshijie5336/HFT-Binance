@@ -1,10 +1,11 @@
 .git
+.github
+build
+build-*
 .venv
 __pycache__
 *.pyc
 .pytest_cache
-.ruff_cache
-data/runs
-data/replays
-data/*.json
+data
 *.log
+.marketpipe-test-tmp

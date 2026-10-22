@@ -1,0 +1,5 @@
+file: raw_frames.jsonl
+bytes: 19881198
+records: 24903
+sha256: 5836675014897976d47654e8d0fde5f765f7ff129d0ecba9c413d5c5a82919b8
+verified_at_utc: 2026-10-22T04:55:51.1846290Z

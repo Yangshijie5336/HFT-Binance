@@ -1,9 +1,0 @@
-{
-  "result": "PASS",
-  "benchmark_type": "SYNTHETIC_BENCHMARK",
-  "events": 100000,
-  "elapsed_seconds": 0.685875,
-  "events_per_second": 145799.14,
-  "data_source": "synthetic",
-  "execution_enabled": false
-}

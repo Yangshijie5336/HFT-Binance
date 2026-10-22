@@ -1,16 +1,29 @@
-.PHONY: test lint capture replay docker-build
+.PHONY: all configure build test capture report benchmark docker clean
 
-test:
-	python -m pytest -q
+BUILD_DIR ?= build
 
-lint:
-	python -m compileall -q src tests
+all: build
 
-capture:
-	python -m marketpipe.cli capture --duration 900 --symbol BTC/USD
+configure:
+	cmake -S . -B $(BUILD_DIR) -G Ninja -DCMAKE_BUILD_TYPE=Release
 
-replay:
-	python -m marketpipe.cli replay --input data/runs/<run-id>/raw_frames.jsonl
+build: configure
+	cmake --build $(BUILD_DIR)
 
-docker-build:
-	docker build -t marketpipe-hft-demo:0.1.0 .
+test: build
+	ctest --test-dir $(BUILD_DIR) --output-on-failure
+
+capture: build
+	./$(BUILD_DIR)/marketpipe capture --symbol BTCUSDT --duration 900 --output-dir data/runs
+
+report: build
+	./$(BUILD_DIR)/marketpipe report --run-dir $(RUN_DIR)
+
+benchmark: build
+	./$(BUILD_DIR)/marketpipe benchmark --events 100000 --mode all --output-dir data/benchmarks
+
+docker:
+	docker build -t marketpipe-hft-demo:0.3.0 .
+
+clean:
+	rm -rf $(BUILD_DIR) data/benchmarks

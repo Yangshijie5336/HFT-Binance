@@ -1,0 +1,134 @@
+Start testing: Oct 22 12:39 ÖĞ¹ú±ê×¼Ê±¼ä
+----------------------------------------------------------
+1/4 Testing: marketpipe_help
+1/4 Test: marketpipe_help
+Command: "C:/Users/YSJ/Desktop/æ­å·ä¸€è¯ºèµ„äº§/marketpipe-hft-demo/build-ninja/marketpipe.exe" "--help"
+Directory: C:/Users/YSJ/Desktop/æ­å·ä¸€è¯ºèµ„äº§/marketpipe-hft-demo/build-ninja
+"marketpipe_help" start time: Oct 22 12:39 ÖĞ¹ú±ê×¼Ê±¼ä
+Output:
+----------------------------------------------------------
+marketpipe 0.3.0 (C++20)
+
+Commands:
+  capture   --symbol BTCUSDT --duration 900 --output-dir data/runs
+            [--ws-url URL] [--queue-capacity N] [--ring-capacity N]
+            [--fsync-every N] [--run-id ID] [--quiet]
+  replay    --input raw_frames.jsonl [--output-dir DIR]
+  benchmark --events 100000 [--mode all|parse|pipeline|persist]
+            [--output-dir data/benchmarks]
+  report    --run-dir data/runs/<run>
+  synthetic --events 100000   (legacy alias for the factor benchmark)
+
+The default capture endpoint is Binance Spot wss://stream.binance.com:9443/ws/<symbol>@trade.
+Only public market data is used. Signals are labels; order execution is disabled.
+<end of output>
+Test time =   0.60 sec
+----------------------------------------------------------
+Test Passed.
+"marketpipe_help" end time: Oct 22 12:39 ÖĞ¹ú±ê×¼Ê±¼ä
+"marketpipe_help" time elapsed: 00:00:00
+----------------------------------------------------------
+
+2/4 Testing: marketpipe_unit
+2/4 Test: marketpipe_unit
+Command: "C:/Users/YSJ/Desktop/æ­å·ä¸€è¯ºèµ„äº§/marketpipe-hft-demo/build-ninja/marketpipe_unit_tests.exe"
+Directory: C:/Users/YSJ/Desktop/æ­å·ä¸€è¯ºèµ„äº§/marketpipe-hft-demo/build-ninja
+"marketpipe_unit" start time: Oct 22 12:39 ÖĞ¹ú±ê×¼Ê±¼ä
+Output:
+----------------------------------------------------------
+[PASS] unit.json_parses_and_preserves_number_text
+[PASS] unit.json_rejects_malformed_input
+[PASS] unit.json_decodes_escapes
+[PASS] unit.trade_parser_preserves_decimal_text_and_side
+[PASS] unit.trade_parser_handles_combined_stream_envelope
+[PASS] unit.trade_parser_rejects_bad_frames
+[PASS] unit.factors_and_strategy_emit_buy_sell_hold
+[PASS] unit.factor_window_expires_stale_trades
+[PASS] unit.deduplicator_detects_duplicates_and_out_of_order
+[PASS] unit.bounded_queue_reports_overflow_and_drains
+[PASS] unit.jsonl_writer_flushes_hashes_and_finalizes
+[PASS] unit.jsonl_writer_surfaces_simulated_disk_full
+[PASS] unit.jsonl_writer_surfaces_final_sync_failure
+[PASS] unit.jsonl_writer_reports_open_failure
+[PASS] unit.sha256_known_vector
+[PASS] unit.atomic_file_write_round_trip
+[PASS] unit.logger_writes_valid_structured_json
+[PASS] unit.utc_formatting_is_iso_utc
+unit: 18/18 passed
+<end of output>
+Test time =   0.26 sec
+----------------------------------------------------------
+Test Passed.
+"marketpipe_unit" end time: Oct 22 12:39 ÖĞ¹ú±ê×¼Ê±¼ä
+"marketpipe_unit" time elapsed: 00:00:00
+----------------------------------------------------------
+
+3/4 Testing: marketpipe_integration
+3/4 Test: marketpipe_integration
+Command: "C:/Users/YSJ/Desktop/æ­å·ä¸€è¯ºèµ„äº§/marketpipe-hft-demo/build-ninja/marketpipe_integration_tests.exe"
+Directory: C:/Users/YSJ/Desktop/æ­å·ä¸€è¯ºèµ„äº§/marketpipe-hft-demo/build-ninja
+"marketpipe_integration" start time: Oct 22 12:39 ÖĞ¹ú±ê×¼Ê±¼ä
+Output:
+----------------------------------------------------------
+capture result=PASS run_dir=C:\Users\YSJ\Desktop\º¼ÖİÒ»Åµ×Ê²ú\marketpipe-hft-demo\build-ninja\.marketpipe-test-tmp\integration_basic_1792643951521776800\basic frames=8 processed=8 signals=8
+[PASS] integration.capture_end_to_end_basic_pass
+capture result=PARTIAL run_dir=C:\Users\YSJ\Desktop\º¼ÖİÒ»Åµ×Ê²ú\marketpipe-hft-demo\build-ninja\.marketpipe-test-tmp\integration_reconnect_1792643953194230500\reconnect frames=5 processed=5 signals=5
+[PASS] integration.reconnect_isolates_generations_and_records_gap
+capture result=PARTIAL run_dir=C:\Users\YSJ\Desktop\º¼ÖİÒ»Åµ×Ê²ú\marketpipe-hft-demo\build-ninja\.marketpipe-test-tmp\integration_dedup_1792643955636257200\dedup frames=5 processed=3 signals=3
+[PASS] integration.duplicate_and_out_of_order_trades_are_counted
+capture result=PARTIAL run_dir=C:\Users\YSJ\Desktop\º¼ÖİÒ»Åµ×Ê²ú\marketpipe-hft-demo\build-ninja\.marketpipe-test-tmp\integration_malformed_1792643957205469700\malformed frames=5 processed=2 signals=2
+[PASS] integration.malformed_frames_do_not_stop_capture
+warning: post-run verification did not pass
+capture result=FAIL run_dir=C:\Users\YSJ\Desktop\º¼ÖİÒ»Åµ×Ê²ú\marketpipe-hft-demo\build-ninja\.marketpipe-test-tmp\integration_overflow_1792643958775580900\overflow frames=4 processed=3 signals=3
+[PASS] integration.queue_overflow_invalidates_the_sample
+warning: post-run verification did not pass
+capture result=FAIL run_dir=C:\Users\YSJ\Desktop\º¼ÖİÒ»Åµ×Ê²ú\marketpipe-hft-demo\build-ninja\.marketpipe-test-tmp\integration_sigint_1792643958909578400\sigint frames=53 processed=53 signals=53
+[PASS] integration.sigint_stops_drains_and_finalizes
+warning: post-run verification did not pass
+capture result=FAIL run_dir=C:\Users\YSJ\Desktop\º¼ÖİÒ»Åµ×Ê²ú\marketpipe-hft-demo\build-ninja\.marketpipe-test-tmp\integration_sigterm_1792643959910778500\sigterm frames=200 processed=200 signals=200
+[PASS] integration.sigterm_stops_drains_and_finalizes
+warning: post-run verification did not pass
+capture result=BLOCKED run_dir=C:\Users\YSJ\Desktop\º¼ÖİÒ»Åµ×Ê²ú\marketpipe-hft-demo\build-ninja\.marketpipe-test-tmp\integration_http451_1792643960583354200\http451 frames=0 processed=0 signals=0
+[PASS] integration.http_451_is_blocked_and_not_retried_forever
+warning: post-run verification did not pass
+capture result=FAIL run_dir=C:\Users\YSJ\Desktop\º¼ÖİÒ»Åµ×Ê²ú\marketpipe-hft-demo\build-ninja\.marketpipe-test-tmp\integration_diskfull_1792643960719786400\diskfull frames=2 processed=2 signals=2
+[PASS] integration.raw_disk_full_marks_persistence_failure
+warning: post-run verification did not pass
+capture result=FAIL run_dir=C:\Users\YSJ\Desktop\º¼ÖİÒ»Åµ×Ê²ú\marketpipe-hft-demo\build-ninja\.marketpipe-test-tmp\integration_finalsync_1792643960842398200\finalsync frames=10 processed=10 signals=10
+[PASS] integration.final_flush_failure_marks_failure
+capture result=PASS run_dir=C:\Users\YSJ\Desktop\º¼ÖİÒ»Åµ×Ê²ú\marketpipe-hft-demo\build-ninja\.marketpipe-test-tmp\integration_tamper_1792643962279610200\tamper frames=6 processed=6 signals=6
+[PASS] integration.report_detects_tampered_raw_file
+capture result=PASS run_dir=C:\Users\YSJ\Desktop\º¼ÖİÒ»Åµ×Ê²ú\marketpipe-hft-demo\build-ninja\.marketpipe-test-tmp\integration_replay_1792643963524034400\capture frames=7 processed=7 signals=7
+{"result":"PASS","replay":true,"input":"C:\\Users\\YSJ\\Desktop\\º¼ÖİÒ»Åµ×Ê²ú\\marketpipe-hft-demo\\build-ninja\\.marketpipe-test-tmp\\integration_replay_1792643963524034400\\capture\\raw_frames.jsonl","input_sha256":"e99aaa75eed112d49fce6d26a180ef134df4199320b7932004ec12b2c1d7f1b9","records_read":7,"trades_processed":7,"duplicates":0,"out_of_order":0,"malformed_frames":0,"execution_enabled":false}
+[PASS] integration.replay_reproduces_normalized_pipeline
+refusing plaintext ws:// for non-loopback host; use wss://
+[PASS] integration.plaintext_websocket_is_rejected_for_non_loopback
+warning: post-run verification did not pass
+capture result=FAIL run_dir=C:\Users\YSJ\Desktop\º¼ÖİÒ»Åµ×Ê²ú\marketpipe-hft-demo\build-ninja\.marketpipe-test-tmp\integration_refused_1792643964778955700\refused frames=0 processed=0 signals=0
+[PASS] integration.connection_refused_returns_nonzero_with_diagnostics
+integration: 14/14 passed
+<end of output>
+Test time =  15.90 sec
+----------------------------------------------------------
+Test Passed.
+"marketpipe_integration" end time: Oct 22 12:39 ÖĞ¹ú±ê×¼Ê±¼ä
+"marketpipe_integration" time elapsed: 00:00:15
+----------------------------------------------------------
+
+4/4 Testing: marketpipe_benchmark_100k
+4/4 Test: marketpipe_benchmark_100k
+Command: "C:/Users/YSJ/Desktop/æ­å·ä¸€è¯ºèµ„äº§/marketpipe-hft-demo/build-ninja/marketpipe.exe" "benchmark" "--events" "100000" "--mode" "all" "--output-dir" "C:/Users/YSJ/Desktop/æ­å·ä¸€è¯ºèµ„äº§/marketpipe-hft-demo/build-ninja/benchmark-data"
+Directory: C:/Users/YSJ/Desktop/æ­å·ä¸€è¯ºèµ„äº§/marketpipe-hft-demo/build-ninja
+"marketpipe_benchmark_100k" start time: Oct 22 12:39 ÖĞ¹ú±ê×¼Ê±¼ä
+Output:
+----------------------------------------------------------
+{"benchmark_type":"SYNTHETIC_BENCHMARK","live_network":false,"interpretation":"not live network throughput","events_per_mode":100000,"modes":[{"benchmark_type":"SYNTHETIC_BENCHMARK","mode":"parse_only","live_network":false,"events":100000,"events_per_second":165707,"duration_seconds":0.60347450000000002,"p50_us":3.3999999999999999,"p95_us":5.9000000000000004,"p99_us":7.5999999999999996,"latency_samples":20000,"signals_emitted":0,"raw_frames_written":0,"raw_frames_sha256":"","output_file":"","cpu_percent":98.336437314351159,"rss_bytes":25501696,"dropped_events":0,"errors":0,"execution_enabled":false},{"benchmark_type":"SYNTHETIC_BENCHMARK","mode":"full_pipeline","live_network":false,"events":100000,"events_per_second":143269,"duration_seconds":0.69798890000000002,"p50_us":6.2000000000000002,"p95_us":9.8000000000000007,"p99_us":13.6,"latency_samples":20000,"signals_emitted":99991,"raw_frames_written":0,"raw_frames_sha256":"","output_file":"","cpu_percent":99.345224502959354,"rss_bytes":25784320,"dropped_events":0,"errors":0,"execution_enabled":false},{"benchmark_type":"SYNTHETIC_BENCHMARK","mode":"pipeline_plus_raw_persistence","live_network":false,"events":100000,"events_per_second":53375,"duration_seconds":1.8735379999999999,"p50_us":10.199999999999999,"p95_us":410.80000000000001,"p99_us":603.10000000000002,"latency_samples":20000,"signals_emitted":99991,"raw_frames_written":100000,"raw_frames_sha256":"0afb4d1696fa4972104514b3a0777a7ae4219ed166b81ff9fa5d357c37c79836","output_file":"C:/Users/YSJ/Desktop/º¼ÖİÒ»Åµ×Ê²ú/marketpipe-hft-demo/build-ninja/benchmark-data\\benchmark_3_431600\\raw_frames.jsonl","cpu_percent":77.328351117052478,"rss_bytes":27926528,"dropped_events":0,"errors":0,"execution_enabled":false}]}
+<end of output>
+Test time =   4.01 sec
+----------------------------------------------------------
+Test Passed.
+"marketpipe_benchmark_100k" end time: Oct 22 12:39 ÖĞ¹ú±ê×¼Ê±¼ä
+"marketpipe_benchmark_100k" time elapsed: 00:00:04
+----------------------------------------------------------
+
+End testing: Oct 22 12:39 ÖĞ¹ú±ê×¼Ê±¼ä

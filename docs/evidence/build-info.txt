@@ -1,0 +1,8 @@
+captured_at_utc=2026-10-22T04:38:03.6913884Z
+cmake=cmake version 4.3.1-msvc1
+ninja=1.13.2
+compiler=MSVC 19.51.36260
+boost=1.91
+openssl=3.6.2
+host=YANGSHIHCHIEH
+os=Microsoft Windows NT 10.0.26300.0

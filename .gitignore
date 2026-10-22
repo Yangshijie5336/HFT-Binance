@@ -1,19 +1,28 @@
+# Build products
+build/
+build-*/
+dist/
+*.obj
+*.exe
+*.pdb
+*.ilk
+
+# Runtime data and logs (never commit sampling output; use Actions artifacts/releases)
+data/runs/*
+!data/runs/.gitkeep
+data/smoke/
+data/benchmarks/
+data/replays/
+*.log
+.marketpipe-test-tmp/
+.marketpipe-test-tmp*
+
+# Local secrets / environments
+.env
+.venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
-.ruff_cache/
-.venv/
-.env
-*.egg-info/
-build/
-dist/
-data/runs/**
-!data/runs/.gitkeep
-*.sqlite*
-
 .pytest-final*/
-.tmp-*/
-
 .pytest-*/
-
-build-cpp/
+.tmp-*/

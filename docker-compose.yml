@@ -3,13 +3,22 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: marketpipe-hft-demo:0.2.0-cpp
-    command: ["--help"]
+    image: marketpipe-hft-demo:0.3.0
+    command:
+      - capture
+      - --symbol
+      - BTCUSDT
+      - --duration
+      - "900"
+      - --output-dir
+      - /app/data/runs
     restart: "no"
     init: true
-    stop_grace_period: 30s
+    stop_grace_period: 60s
     environment:
-      MARKETPIPE_WS_URL: "wss://ws.kraken.com/v2"
-      PYTHONUNBUFFERED: "1"
+      MARKETPIPE_CA_FILE: /app/certs/cacert.pem
     volumes:
-      - ./data:/app/data
+      - marketpipe-data:/app/data
+
+volumes:
+  marketpipe-data:

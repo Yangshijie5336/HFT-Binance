@@ -1,0 +1,63 @@
+name: Manual live capture
+
+# Manual only: a 900-second public Binance capture. GitHub-hosted runners may
+# receive HTTP 451 depending on their egress region; the workflow preserves the
+# BLOCKED summary and diagnostics instead of treating it as a success.
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: "Capture duration in seconds"
+        required: true
+        default: "900"
+      symbol:
+        description: "Spot symbol"
+        required: true
+        default: "BTCUSDT"
+
+permissions:
+  contents: read
+
+jobs:
+  live-capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build g++ libboost-all-dev libssl-dev ca-certificates
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j"$(nproc)"
+
+      - name: Capture public trades
+        id: capture
+        run: |
+          set +e
+          ./build/marketpipe capture \
+            --symbol "${{ inputs.symbol }}" \
+            --duration "${{ inputs.duration }}" \
+            --output-dir data/runs \
+            --quiet
+          echo "capture_exit=$?" >> "$GITHUB_OUTPUT"
+          RUN_DIR="$(ls -1d data/runs/*/ | sort | tail -1)"
+          echo "run_dir=$RUN_DIR" >> "$GITHUB_OUTPUT"
+          ./build/marketpipe report --run-dir "$RUN_DIR" || true
+
+      - name: Show summary and verification
+        if: always()
+        run: |
+          find data/runs -maxdepth 2 -name summary.json -print -exec cat {} \;
+          find data/runs -maxdepth 2 -name verification.json -print -exec cat {} \;
+
+      - name: Upload raw frames, summary, hashes and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: marketpipe-live-capture
+          path: data/runs/
+          if-no-files-found: warn
+          retention-days: 14
