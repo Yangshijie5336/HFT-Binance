@@ -1,6 +1,6 @@
-# Interfaces
+# 接口说明
 
-## Command line
+## 命令行
 
 ```
 marketpipe --help
@@ -13,58 +13,52 @@ marketpipe synthetic [--events N]
 
 ### `capture`
 
-| Option | Default | Validation |
+| 参数 | 默认值 | 校验 |
 |---|---|---|
-| `--symbol` | `BTCUSDT` | non-empty; URL stream name is lowercased |
-| `--ws-url` | `wss://stream.binance.com:9443/ws/<symbol>@trade` | `ws://` only for loopback |
-| `--duration` | `900` | positive seconds (fractional allowed) |
-| `--output-dir` | `data/runs` | writable directory |
-| `--run-id` | `<UTC timestamp>Z_<symbol>` | explicit run subdirectory name |
-| `--queue-capacity` | `65536` | positive |
-| `--ring-capacity` | `20000` | positive |
-| `--fsync-every` | `100` | positive; raw/derived records between fsyncs |
-| `--connect-timeout-ms` | `10000` | positive |
-| `--idle-timeout-ms` | `90000` | positive; Beast keep-alive pings enabled |
-| `--reconnect-initial` | `1.0` | non-negative seconds |
-| `--reconnect-max` | `15.0` | positive seconds |
-| `--max-connect-failures` | `10` | positive consecutive failures |
-| `--ca-file` | discovered | PEM bundle; explicit load failure aborts |
-| `--quiet` | off | suppress stderr mirror |
+| `--symbol` | `BTCUSDT` | 非空；URL 流名转为小写 |
+| `--ws-url` | `wss://stream.binance.com:9443/ws/<symbol>@trade` | `ws://` 仅允许回环 |
+| `--duration` | `900` | 正数秒（允许小数） |
+| `--output-dir` | `data/runs` | 可写目录 |
+| `--run-id` | `<UTC 时间戳>Z_<symbol>` | 指定运行子目录名 |
+| `--queue-capacity` | `65536` | 正数 |
+| `--ring-capacity` | `20000` | 正数 |
+| `--fsync-every` | `100` | 正数；raw/派生文件 fsync 间隔记录数 |
+| `--connect-timeout-ms` | `10000` | 正数 |
+| `--idle-timeout-ms` | `90000` | 正数；启用 Beast keep-alive ping |
+| `--reconnect-initial` | `1.0` | 非负秒数 |
+| `--reconnect-max` | `15.0` | 正秒数 |
+| `--max-connect-failures` | `10` | 连续失败上限 |
+| `--ca-file` | 自动发现 | PEM bundle；显式加载失败会中止 |
+| `--quiet` | 关闭 | 不镜像日志到 stderr |
 
-Exit status:
+退出状态：
 
-| Code | Meaning |
+| 退出码 | 含义 |
 |---|---|
-| `0` | `PASS` or `PARTIAL` summary written and verified |
-| `2` | `FAIL` / `BLOCKED` / argument error / persistence or TLS failure |
-| `130` | stopped by SIGINT or SIGTERM; summary still finalized |
+| `0` | `PASS` 或 `PARTIAL`，summary 已写入并通过校验 |
+| `2` | `FAIL` / `BLOCKED` / 参数错误 / 持久化或 TLS 失败 |
+| `130` | 被 SIGINT 或 SIGTERM 停止；summary 仍会最终确定 |
 
 ### `replay`
 
-Reads `raw_frames.jsonl`, extracts each `payload`, and runs the same parser/factors/
-strategy in arrival order. Outputs `normalized_events.jsonl`, `factors.jsonl`,
-`signals.jsonl`, `replay_summary.json` in `--output-dir` (default
-`data/replays/<UTC timestamp>_replay`). Exit `2` on open/write/finalize failure.
+读取 `raw_frames.jsonl`，提取每条 `payload`，按到达顺序运行同一套解析器/因子/策略。在 `--output-dir`（默认 `data/replays/<UTC 时间戳>_replay`）输出 `normalized_events.jsonl`、`factors.jsonl`、`signals.jsonl`、`replay_summary.json`。打开/写入/最终确定失败返回 `2`。
 
 ### `benchmark`
 
-Modes:
+模式：
 
-- `parse`: JSON → validated trade only.
-- `pipeline`: parse + dedup + factors + strategy, no disk.
-- `persist`: pipeline plus raw JSONL persistence and final fsync.
-- `all`: all three sequentially (default).
+- `parse`：仅 JSON → 校验后的成交。
+- `pipeline`：解析 + 去重 + 因子 + 策略，不落盘。
+- `persist`：处理链路 + raw JSONL 持久化与最终 fsync。
+- `all`：依次运行三种（默认）。
 
-The output is explicitly labelled `"benchmark_type":"SYNTHETIC_BENCHMARK"` and
-`"live_network":false`. It must never be presented as live network throughput.
+输出明确标记 `"benchmark_type":"SYNTHETIC_BENCHMARK"` 和 `"live_network":false`，绝不能作为实时网络吞吐量展示。
 
 ### `report`
 
-Recomputes artifact SHA-256 values and validates `raw_frames.jsonl` record-by-record.
-Writes `verification.json` and regenerates `performance_report.md`. Exit `0` only when
-the summary is `PASS` and every check passes; `3` for a valid `PARTIAL`; `2` otherwise.
+重算产物 SHA-256，并逐条校验 `raw_frames.jsonl`。写入 `verification.json` 并重新生成 `performance_report.md`。只有 summary 为 `PASS` 且所有检查通过才返回 `0`；有效 `PARTIAL` 返回 `3`；其余返回 `2`。
 
-## Run directory
+## 运行目录
 
 ```
 <output-dir>/<run-id>/
@@ -78,13 +72,11 @@ the summary is `PASS` and every check passes; `3` for a valid `PARTIAL`; `2` oth
   performance_report.md
 ```
 
-`artifact_sha256` covers `raw_frames.jsonl`, `normalized_events.jsonl`, `factors.jsonl`,
-`signals.jsonl` and `system.log`. It is computed after those files are finalized and
-before `summary.json` is written.
+`artifact_sha256` 覆盖 `raw_frames.jsonl`、`normalized_events.jsonl`、`factors.jsonl`、`signals.jsonl` 和 `system.log`。它在这些文件最终确定后、写入 `summary.json` 前计算。
 
-## Raw frame record
+## 原始帧记录
 
-One JSON object per WebSocket text frame, in receive order:
+每个 WebSocket 文本帧一行 JSON，按接收顺序排列：
 
 ```json
 {
@@ -99,16 +91,14 @@ One JSON object per WebSocket text frame, in receive order:
   "received_ns": 1234567890123,
   "payload": "{\"e\":\"trade\",...}",
   "raw_payload": "{\"e\":\"trade\",...}",
-  "payload_sha256": "…64 hex…",
+  "payload_sha256": "…64 位十六进制…",
   "payload_bytes": 217
 }
 ```
 
-`payload` is the exact wire text after JSON string escaping; `payload_sha256` is computed
-over the unescaped text. `frame_seq` is global and strictly increasing.
-`connection_generation` is non-decreasing.
+`payload` 是 JSON 字符串转义后的精确线上文本；`payload_sha256` 对未转义文本计算。`frame_seq` 全局严格递增，`connection_generation` 非递减。
 
-## Normalized event
+## 标准化事件
 
 ```json
 {
@@ -136,10 +126,9 @@ over the unescaped text. `frame_seq` is global and strictly increasing.
 }
 ```
 
-`side` is the aggressor side derived from Binance `m`: `m=true` → `sell`, otherwise
-`buy`. Duplicates and out-of-order trades are counted but not written to this stream.
+`side` 是 Binance `m` 推导的主动方：`m=true` → `sell`，否则 `buy`。重复和乱序成交只计数，不写入此流。
 
-## Factor record
+## 因子记录
 
 ```json
 {
@@ -159,15 +148,14 @@ over the unescaped text. `frame_seq` is global and strictly increasing.
 }
 ```
 
-Factor definitions:
+因子定义：
 
-- `trade_imbalance = (buy_qty - sell_qty) / (buy_qty + sell_qty)` over a 30 s window
-  keyed by local receive time.
-- `return_n = last_price / first_price - 1` over up to 21 recent prices.
-- `trade_rate_10s = trades in the last 10 s / 10`.
-- `avg_trade_size = window_qty / window_trades`.
+- `trade_imbalance = (buy_qty - sell_qty) / (buy_qty + sell_qty)`，窗口 30 秒，以本地接收时间计时。
+- `return_n = last_price / first_price - 1`，最多 21 个近期价格。
+- `trade_rate_10s = 最近 10 秒成交数 / 10`。
+- `avg_trade_size = 窗口成交量 / 窗口成交数`。
 
-## Signal record
+## 信号记录
 
 ```json
 {
@@ -182,39 +170,38 @@ Factor definitions:
 }
 ```
 
-Rules:
+规则：
 
-- `BUY_SIGNAL` if `imbalance >= 0.15` and `return_n >= 0.0001`.
-- `SELL_SIGNAL` if `imbalance <= -0.15` and `return_n <= -0.0001`.
-- otherwise `HOLD`.
+- `imbalance >= 0.15` 且 `return_n >= 0.0001` → `BUY_SIGNAL`。
+- `imbalance <= -0.15` 且 `return_n <= -0.0001` → `SELL_SIGNAL`。
+- 其余 → `HOLD`。
 
-`score = clamp(imbalance * 0.7 + return_n * 0.3 * 1000, -1, 1)`. No order is sent.
+`score = clamp(imbalance * 0.7 + return_n * 0.3 * 1000, -1, 1)`。不会发送任何订单。
 
 ## `summary.json`
 
-Key fields (see the file for the complete set):
+关键字段（完整字段见文件）：
 
-| Field | Meaning |
+| 字段 | 含义 |
 |---|---|
-| `result` | `PASS`, `PARTIAL`, `FAIL`, `BLOCKED` |
-| `failure` | null or concrete diagnostic |
-| `started_utc` / `finished_utc` / `started_wall_ns` / `finished_wall_ns` | wall clock |
-| `duration_target_seconds` / `duration_actual_seconds` | requested vs observed |
-| `frames_received` / `raw_frames_records` / `raw_frames_bytes` | raw ingest/persistence |
-| `trade_events_seen` / `trades_processed` / `signals_emitted` | pipeline counters |
-| `duplicates` / `out_of_order` / `malformed_frames` | validation counters |
-| `subscription_acks` / `server_errors` | protocol frames |
-| `reconnects` / `disconnects` / `connection_generations` | connection history |
-| `gap_windows[]` | generation, approximate gap seconds, timestamps |
-| `queue_capacity` / `queue_high_water` / `queue_overflow` / `dropped_events` | backpressure |
-| `persistence_error` / `processing_failures` | durability/failure flags |
-| `raw_frames_sha256` / `raw_integrity_verified` | raw file integrity |
-| `queue_wait_latency` / `receive_to_process_latency` / `receive_to_signal_latency` | sampled percentiles |
-| `cpu_percent_avg` / `rss_bytes_peak` | sampled process resources |
-| `activity_by_minute_utc` | unique processed trades by exchange minute |
-| `quality_checks` | PASS/FALSE gate map |
-| `artifact_sha256` | file hashes |
-| `execution_enabled` | always `false` |
+| `result` | `PASS`、`PARTIAL`、`FAIL`、`BLOCKED` |
+| `failure` | null 或具体诊断 |
+| `started_utc` / `finished_utc` / `started_wall_ns` / `finished_wall_ns` | 墙钟时间 |
+| `duration_target_seconds` / `duration_actual_seconds` | 目标与实际时长 |
+| `frames_received` / `raw_frames_records` / `raw_frames_bytes` | 接收/落盘 |
+| `trade_events_seen` / `trades_processed` / `signals_emitted` | 处理链路计数 |
+| `duplicates` / `out_of_order` / `malformed_frames` | 校验计数 |
+| `subscription_acks` / `server_errors` | 协议帧 |
+| `reconnects` / `disconnects` / `connection_generations` | 连接历史 |
+| `gap_windows[]` | 代次、近似缺口秒数、时间戳 |
+| `queue_capacity` / `queue_high_water` / `queue_overflow` / `dropped_events` | 背压 |
+| `persistence_error` / `processing_failures` | 持久化/失败标志 |
+| `raw_frames_sha256` / `raw_integrity_verified` | 原始文件完整性 |
+| `queue_wait_latency` / `receive_to_process_latency` / `receive_to_signal_latency` | 采样延迟分位 |
+| `cpu_percent_avg` / `rss_bytes_peak` | 进程资源采样 |
+| `activity_by_minute_utc` | 按交易所分钟统计的唯一成交 |
+| `quality_checks` | PASS/FALSE 门禁映射 |
+| `artifact_sha256` | 文件哈希 |
+| `execution_enabled` | 始终为 `false` |
 
-Latency samples are taken every fifth processed event and capped at 200,000. They are
-local timings, not exchange-to-exchange latency.
+延迟每 5 笔已处理成交采样一次，上限 200,000 条。它们是本地时间，不是交易所到交易所延迟。

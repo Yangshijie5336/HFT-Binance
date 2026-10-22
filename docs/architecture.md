@@ -1,140 +1,111 @@
-# Architecture and thread-safety design
+# 架构与线程安全设计
 
-## Scope
+## 范围
 
-This is a public-market-data collection and signal-labeling demo. It deliberately has
-no authenticated trading, order management, position or PnL logic. The only exchange
-writes are protocol-level WebSocket close frames.
+这是一个公开行情采集与信号标注的工程示例。它刻意不包含认证交易、订单管理、持仓或 PnL 逻辑。唯一的交易所写操作是协议层的 WebSocket 关闭帧。
 
-## Components
+## 组件
 
-| Component | Source | Responsibility |
+| 组件 | 源文件 | 职责 |
 |---|---|---|
-| JSON DOM | `cpp/src/json.cpp` | Allocation-light parse of WebSocket text; numbers keep exact wire text |
-| Core | `cpp/src/core.cpp` | Binance trade parser, dedup primitives, 30 s factors, deterministic strategy, replay |
-| Runtime | `cpp/src/runtime.cpp` | Bounded queue, durable JSONL writer, SHA-256, JSON logger, CPU/RSS sampler, latency quantiles |
-| Collector | `cpp/src/capture.cpp` | TLS WebSocket client, reconnects, queue wiring, persistence, summary |
-| Report | `cpp/src/report.cpp` | Recompute hashes/counts, verify integrity, render acceptance report |
-| Benchmark | `cpp/src/benchmark.cpp` | Synthetic parse / pipeline / persistence throughput |
-| CLI | `cpp/src/main.cpp` | Argument parsing and exit codes |
+| JSON DOM | `cpp/src/json.cpp` | 轻量解析 WebSocket 文本；数字保留精确原文 |
+| 核心 | `cpp/src/core.cpp` | Binance 成交解析、去重原语、30 秒因子、确定性策略、replay |
+| 运行时 | `cpp/src/runtime.cpp` | 有界队列、持久化 JSONL 写入器、SHA-256、JSON 日志、CPU/RSS 采样、延迟分位 |
+| 采集器 | `cpp/src/capture.cpp` | TLS WebSocket 客户端、重连、队列接线、持久化、summary |
+| 报告 | `cpp/src/report.cpp` | 重算哈希/计数、校验完整性、生成验收报告 |
+| 基准 | `cpp/src/benchmark.cpp` | 合成解析 / 处理链路 / 持久化吞吐 |
+| CLI | `cpp/src/main.cpp` | 参数解析与退出码 |
 
-## Data path
+## 数据通路
 
 ```
-socket read (network thread)
+socket 读取（网络线程）
   → RawFrame {seq, generation, connection_id, received_utc, received_steady_ns, payload}
-  → raw_queue (bounded, non-blocking try_push)
-  → writer thread:
-        raw_frames.jsonl (batch flush; fsync every N records and at finalize)
-        → process_queue (bounded, non-blocking try_push)
-  → processor thread:
-        parse → validate → dedup → out-of-order check
-        → FactorEngine (30 s receive-time window, 10 s trade rate, 20-trade return)
+  → raw_queue（有界，非阻塞 try_push）
+  → writer 线程：
+        raw_frames.jsonl（批量 flush；每 N 条 fsync，最终再 fsync）
+        → process_queue（有界，非阻塞 try_push）
+  → processor 线程：
+        解析 → 校验 → 去重 → 乱序检查
+        → FactorEngine（30 秒接收时间窗、10 秒成交速率、20 笔收益）
         → evaluate() → BUY_SIGNAL / SELL_SIGNAL / HOLD
-        → normalized_events.jsonl, factors.jsonl, signals.jsonl
+        → normalized_events.jsonl、factors.jsonl、signals.jsonl
 ```
 
-The writer drains the raw queue before closing the processing queue, so a graceful stop
-never loses a frame that was already accepted by the network loop. The processor drains
-the processing queue before finalizing the derived files.
+writer 在关闭处理队列前先排空 raw 队列，因此优雅停止不会丢失已被网络循环接收的帧。processor 在最终确定派生文件前排空处理队列。
 
-## Threads
+## 线程
 
-| Thread | Owns | Notes |
+| 线程 | 拥有 | 说明 |
 |---|---|---|
-| Main / network | Boost.Asio `io_context`, TLS stream, raw queue producer | C++20 coroutines; one active session at a time |
-| Writer | `raw_frames.jsonl`, process-queue producer | Batch flush every 250 ms; fsync every N records |
-| Processor | derived JSONL files, factors, strategy, dedup | Single-threaded by construction |
-| Resource sampler | CPU/RSS vectors | One sample per second |
-| Stop watcher | Posting socket cancellation | Wakes every 50 ms; posts cancellation onto the I/O thread |
+| 主线程 / 网络线程 | Boost.Asio `io_context`、TLS 流、raw 队列生产者 | C++20 协程；同一时间只有一个活动会话 |
+| writer | `raw_frames.jsonl`、process 队列生产者 | 每 250 ms 批量 flush；每 N 条 fsync |
+| processor | 派生 JSONL 文件、因子、策略、去重 | 结构上单线程 |
+| 资源采样 | CPU/RSS 向量 | 每秒一次 |
+| 停止监视 | 投递 socket 取消操作 | 每 50 ms 唤醒；把取消投递到 I/O 线程 |
 
-Shared mutable state is limited to:
+共享可变状态仅限于：
 
-- `std::atomic<bool> fatal` (writer/processor → network)
-- per-component `CaptureSummary` fields written by exactly one thread and read after join
-- `std::atomic` flags in the stop path
-- the logger's mutex (all threads)
-- the bounded queues' mutex/condition-variable
+- `std::atomic<bool> fatal`（writer/processor → 网络）
+- `CaptureSummary` 中按组件划分的字段：每个字段只由一个线程写，join 后读取
+- 停止路径中的 `std::atomic` 标志
+- logger 的互斥锁（所有线程）
+- 有界队列的互斥锁/条件变量
 
-The network thread does not touch derived writers; the processor does not touch the raw
-writer; the writer does not compute factors. This keeps I/O and CPU work off the socket
-read path except for the enqueue and timestamp.
+网络线程不触碰派生 writer；processor 不触碰 raw writer；writer 不计算因子。除入队和时间戳外，I/O 与 CPU 工作都不在 socket 读取路径上。
 
-## Cancellation and signal handling
+## 取消与信号处理
 
-`SIGINT`/`SIGTERM` handlers only set a `volatile sig_atomic_t` flag (async-signal-safe).
-The stop watcher notices the flag within 50 ms and posts a socket-cancel closure to the
-`io_context`. The socket is therefore only cancelled on its owning thread. The session
-returns `Stopped`, the reconnect loop exits, queues close and drain, files finalize, and
-`summary.json` is written before the process exits with code 130.
+`SIGINT`/`SIGTERM` 处理器只设置 `volatile sig_atomic_t` 标志（异步信号安全）。停止监视器在 50 ms 内发现该标志，并向 `io_context` 投递 socket 取消闭包。因此 socket 只会在其所属线程上被取消。会话返回 `Stopped`，重连循环退出，队列关闭并排空，文件最终确定，进程在退出码 130 前写好 `summary.json`。
 
-## Backpressure and loss detection
+## 背压与丢失检测
 
-- Both queues are bounded and use `try_push`.
-- On `raw_queue` overflow: increment `queue_overflow_events` / `dropped_events`, set
-  `queue_overflow=true`, log `raw_queue_overflow`, mark the run invalid and stop.
-- On `process_queue` overflow: same policy, counted separately.
-- The collector never blocks the socket read indefinitely and never silently discards.
-  The sample result becomes `FAIL`; `quality_checks.zero_queue_overflow` is false.
-- The in-memory dedup table is also bounded (default 200,000 entries, LRU-style eviction).
+- 两个队列都有容量上限，并使用 `try_push`。
+- raw 队列溢出：递增 `queue_overflow_events` / `dropped_events`，置 `queue_overflow=true`，记录 `raw_queue_overflow`，将运行标记为无效并停止。
+- process 队列溢出：相同策略，分别计数。
+- 采集器不会无限阻塞 socket 读取，也绝不静默丢弃。样本结果变为 `FAIL`；`quality_checks.zero_queue_overflow` 为 false。
+- 内存去重表同样有界（默认 200,000 条，LRU 式淘汰）。
 
-## Reconnect and generation semantics
+## 重连与代次语义
 
-- Every connection attempt receives a monotonically increasing `connection_generation`.
-- Each raw frame records its generation and a per-connection id.
-- Deduplication is global across reconnects: a trade replayed after reconnect is counted
-  as a duplicate.
-- On reconnect the collector records a `GapWindow` with the approximate gap duration and
-  last-frame/reconnect UTC timestamps. It explicitly logs that a reconnect cannot prove
-  the exchange feed had no missing trades.
-- Exponential backoff starts at `--reconnect-initial` (default 1 s), doubles per
-  consecutive failure and is capped at `--reconnect-max` (default 15 s).
-- Ten consecutive connection failures abort the run with a diagnostic (configurable).
-- HTTP 451 is treated as a geographic access restriction: `BLOCKED`, no retry storm,
-  no circumvention.
+- 每次连接尝试获得单调递增的 `connection_generation`。
+- 每个原始帧记录其连接代次和连接 id。
+- 去重是跨重连全局的：重连后重复出现的成交会被计为 duplicate。
+- 重连时采集器记录 `GapWindow`，包含近似缺口时长、最后帧时间与重连 UTC 时间，并明确记录重连不能证明交易所行情无缺失。
+- 指数退避从 `--reconnect-initial`（默认 1 秒）开始，每次连续失败翻倍，上限 `--reconnect-max`（默认 15 秒）。
+- 连续 10 次连接失败会带诊断中止运行（可配置）。
+- HTTP 451 被视为地域访问限制：标记 `BLOCKED`，不进行重试风暴，不规避限制。
 
 ## TLS
 
-- `wss://` uses Boost.Beast over `boost::asio::ssl::stream`.
-- `verify_peer` plus `host_name_verification(host)` is mandatory; SNI is set explicitly.
-- Trust sources, in order: `--ca-file`, `MARKETPIPE_CA_FILE`, `SSL_CERT_FILE`,
-  `<cwd>/certs/cacert.pem`, paths next to the executable, Linux system bundles, plus
-  OpenSSL default paths; the Windows Root store is also imported when accessible.
-- Plain `ws://` is accepted only for loopback hosts, solely for the local integration
-  test server. Non-loopback plaintext is rejected before any connection attempt.
-- TLS handshake errors are logged with the OpenSSL error and terminate the run as a
-  fatal configuration/trust failure rather than retrying indefinitely.
+- `wss://` 使用 Boost.Beast over `boost::asio::ssl::stream`。
+- 强制 `verify_peer` 与 `host_name_verification(host)`；显式设置 SNI。
+- 信任来源依次为：`--ca-file`、`MARKETPIPE_CA_FILE`、`SSL_CERT_FILE`、`<cwd>/certs/cacert.pem`、可执行文件旁路径、Linux 系统 bundle、OpenSSL 默认路径；Windows Root 存储可访问时也会导入。
+- 明文 `ws://` 仅允许回环地址，且只用于本地集成测试服务。非回环明文在连接前即拒绝。
+- TLS 握手错误会带 OpenSSL 错误记录，并作为致命配置/信任失败终止运行，而不是无限重试。
 
-## Persistence and integrity
+## 持久化与完整性
 
-- The raw writer stores the exact frame text (JSON-escaped only), payload byte length and
-  per-payload SHA-256.
-- It flushes at least every 250 ms and fsyncs every N records (default 100) and at
-  finalize. Errors are sticky and surfaced in `summary.json`.
-- After finalization the collector re-reads `raw_frames.jsonl`, recomputes the file
-  SHA-256 and verifies every record's sequence, generation ordering, payload hash and
-  byte count. A mismatch marks the run FAIL.
-- `report --run-dir` repeats these checks independently and writes `verification.json`.
-- `summary.json` is written with a temp-file + fsync + rename.
+- raw writer 保存精确帧文本（仅 JSON 转义）、payload 字节数和每帧 payload SHA-256。
+- 至少每 250 ms flush 一次，每 N 条（默认 100）fsync，最终再 fsync。错误是粘性的，并上报到 `summary.json`。
+- 最终确定后，采集器重新读取 `raw_frames.jsonl`，重算文件 SHA-256，并校验每条记录的序号、代次顺序、payload 哈希和字节数。不匹配即标记 FAIL。
+- `report --run-dir` 独立重复这些检查，并写入 `verification.json`。
+- `summary.json` 通过临时文件 + fsync + rename 写入。
 
-## PASS criteria
+## PASS 判定
 
-A run is `PASS` only if all are true:
+只有以下条件全部满足才是 `PASS`：
 
-1. a real non-loopback WebSocket connection succeeded (TLS verified for `wss://`);
-2. observed duration ≥ 99% of the requested duration;
-3. at least one frame and one unique trade were processed;
-4. raw record count equals frames received;
-5. raw file SHA-256 matches both the incremental writer digest and the summary;
-6. zero queue overflow, zero dropped events, zero persistence/processing failures;
-7. zero disconnects, malformed frames, duplicates and out-of-order trades.
+1. 成功建立真实非回环 WebSocket 连接（`wss://` 通过 TLS 校验）；
+2. 实测时长 ≥ 目标时长的 99%；
+3. 至少处理一个原始帧和一笔唯一成交；
+4. 原始记录数等于接收帧数；
+5. raw 文件 SHA-256 与增量 writer 摘要及 summary 一致；
+6. 队列溢出、丢弃、持久化/处理失败均为零；
+7. 断开、异常帧、重复和乱序均为零。
 
-Reconnects, malformed frames, duplicates or out-of-order events yield `PARTIAL`.
-HTTP 451 yields `BLOCKED`. Everything else yields `FAIL`.
+出现重连、异常帧、重复或乱序则为 `PARTIAL`。HTTP 451 为 `BLOCKED`。其余为 `FAIL`。
 
-## Known limits
+## 已知限制
 
-This is a single-host engineering demo, not a colocated HFT engine. Latency includes the
-OS network stack, TLS, scheduling and local disk. It cannot establish long-term
-production reliability, exchange-side completeness or profitability. The 15-minute
-sample describes one host, one feed and one observation window only.
+这是一个单主机工程示例，不是托管在交易所机房的 HFT 引擎。延迟包含操作系统网络栈、TLS、调度和本地磁盘。它不能证明长期生产可靠性、交易所侧完整性或盈利能力。15 分钟样本只描述一台主机、一个行情源和一个观察窗口。

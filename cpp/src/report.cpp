@@ -147,120 +147,131 @@ std::string latency_cell(const json::Value& summary, const char* key) {
   return out.str();
 }
 
+std::string check_label(const std::string& name) {
+  static const std::map<std::string, std::string> labels = {
+      {"summary_result_pass", "摘要结果为 PASS"},
+      {"raw_frames_exist", "raw 文件存在"},
+      {"raw_sha256_matches_summary", "raw SHA-256 与摘要一致"},
+      {"raw_records_match_summary", "raw 记录数与摘要一致"},
+      {"raw_payload_hashes_valid", "逐帧 payload 哈希有效"},
+      {"collector_raw_integrity_verified", "采集器 raw 完整性已校验"},
+      {"artifact_hashes_match", "产物哈希一致"},
+  };
+  const auto found = labels.find(name);
+  return found == labels.end() ? name : found->second;
+}
+
 std::string render_report(const json::Value& summary, const std::map<std::string, std::string>& hashes,
                           const std::map<std::string, bool>& checks) {
   const std::string result = string_member(summary, "result", "UNKNOWN");
   std::ostringstream report;
-  report << "# MarketPipe live-feed performance and acceptance report\n\n";
-  report << "## Result\n\n";
-  report << "- **Run status:** `" << result << "`\n";
-  report << "- **Symbol:** `" << string_member(summary, "symbol", "unknown") << "`\n";
-  report << "- **Source:** `" << string_member(summary, "websocket_url", "unknown") << "`\n";
-  report << "- **Run id:** `" << string_member(summary, "run_id", "unknown") << "`\n";
-  report << "- **Start UTC:** `" << string_member(summary, "started_utc", "unknown") << "`\n";
-  report << "- **Finish UTC:** `" << string_member(summary, "finished_utc", "unknown") << "`\n";
-  report << "- **Target duration:** " << format_double(double_member(summary, "duration_target_seconds"))
-         << " s\n";
-  report << "- **Observed capture duration:** "
-         << format_double(double_member(summary, "duration_actual_seconds")) << " s\n";
-  report << "- **Processing/drain duration:** "
-         << format_double(double_member(summary, "processing_elapsed_seconds")) << " s\n";
-  report << "- **Failure:** `" << string_member(summary, "failure", "none") << "`\n";
-  report << "- **Stopped by signal:** "
-         << (bool_member(summary, "stopped_by_signal") ? "yes" : "no") << "\n\n";
+  report << "# MarketPipe 实时行情性能与验收报告\n\n";
+  report << "## 结果\n\n";
+  report << "- **运行状态：** `" << result << "`\n";
+  report << "- **交易对：** `" << string_member(summary, "symbol", "unknown") << "`\n";
+  report << "- **数据源：** `" << string_member(summary, "websocket_url", "unknown") << "`\n";
+  report << "- **运行 ID：** `" << string_member(summary, "run_id", "unknown") << "`\n";
+  report << "- **开始 UTC：** `" << string_member(summary, "started_utc", "unknown") << "`\n";
+  report << "- **结束 UTC：** `" << string_member(summary, "finished_utc", "unknown") << "`\n";
+  report << "- **目标时长：** "
+         << format_double(double_member(summary, "duration_target_seconds")) << " 秒\n";
+  report << "- **实际采集时长：** "
+         << format_double(double_member(summary, "duration_actual_seconds")) << " 秒\n";
+  report << "- **处理/排空时长：** "
+         << format_double(double_member(summary, "processing_elapsed_seconds")) << " 秒\n";
+  report << "- **失败原因：** `" << string_member(summary, "failure", "无") << "`\n";
+  report << "- **是否被信号停止：** "
+         << (bool_member(summary, "stopped_by_signal") ? "是" : "否") << "\n\n";
 
-  report << "## Event, connection and storage counters\n\n";
-  report << "| Metric | Value |\n|---|---:|\n";
+  report << "## 事件、连接与存储计数\n\n";
+  report << "| 指标 | 数值 |\n|---|---:|\n";
   auto row = [&](const char* label, const std::string& value) {
     report << "| " << label << " | " << value << " |\n";
   };
-  row("WebSocket frames received", std::to_string(uint_member(summary, "frames_received")));
-  row("Raw frames journaled", std::to_string(uint_member(summary, "raw_frames_records")));
-  row("Raw frame bytes", std::to_string(uint_member(summary, "raw_frames_bytes")));
-  row("Trade events seen", std::to_string(uint_member(summary, "trade_events_seen")));
-  row("Unique trades processed", std::to_string(uint_member(summary, "trades_processed")));
-  row("Signals emitted", std::to_string(uint_member(summary, "signals_emitted")));
-  row("Duplicate trades", std::to_string(uint_member(summary, "duplicates")));
-  row("Out-of-order trades", std::to_string(uint_member(summary, "out_of_order")));
-  row("Malformed frames", std::to_string(uint_member(summary, "malformed_frames")));
-  row("Subscription acknowledgements", std::to_string(uint_member(summary, "subscription_acks")));
-  row("Server error frames", std::to_string(uint_member(summary, "server_errors")));
-  row("Disconnects", std::to_string(uint_member(summary, "disconnects")));
-  row("Reconnect attempts", std::to_string(uint_member(summary, "reconnects")));
-  row("Connection generations", std::to_string(uint_member(summary, "connection_generations")));
-  row("Queue high-water / capacity",
+  row("接收 WebSocket 帧", std::to_string(uint_member(summary, "frames_received")));
+  row("落盘 raw 帧", std::to_string(uint_member(summary, "raw_frames_records")));
+  row("raw 帧字节", std::to_string(uint_member(summary, "raw_frames_bytes")));
+  row("看到成交事件", std::to_string(uint_member(summary, "trade_events_seen")));
+  row("已处理唯一成交", std::to_string(uint_member(summary, "trades_processed")));
+  row("发出信号", std::to_string(uint_member(summary, "signals_emitted")));
+  row("重复成交", std::to_string(uint_member(summary, "duplicates")));
+  row("乱序成交", std::to_string(uint_member(summary, "out_of_order")));
+  row("异常帧", std::to_string(uint_member(summary, "malformed_frames")));
+  row("订阅确认", std::to_string(uint_member(summary, "subscription_acks")));
+  row("服务端错误帧", std::to_string(uint_member(summary, "server_errors")));
+  row("断开次数", std::to_string(uint_member(summary, "disconnects")));
+  row("重连尝试", std::to_string(uint_member(summary, "reconnects")));
+  row("连接代次", std::to_string(uint_member(summary, "connection_generations")));
+  row("队列峰值 / 容量",
       std::to_string(uint_member(summary, "queue_high_water")) + " / " +
           std::to_string(uint_member(summary, "queue_capacity")));
-  row("Ring capacity", std::to_string(uint_member(summary, "ring_capacity")));
-  row("Queue overflow", bool_member(summary, "queue_overflow") ? "yes" : "no");
-  row("Dropped events", std::to_string(uint_member(summary, "dropped_events")));
-  row("Persistence error", bool_member(summary, "persistence_error") ? "yes" : "no");
-  row("Processing failures", std::to_string(uint_member(summary, "processing_failures")));
-  row("Throughput", format_double(double_member(summary, "throughput_trades_per_second")) +
-                        " trades/s");
-  row("Observed ingress", format_double(double_member(summary, "ingress_trades_per_second")) +
-                              " trade events/s");
-  row("Raw disk write rate",
-      format_double(double_member(summary, "raw_write_bytes_per_second")) + " bytes/s");
-  row("Average unique trades/minute",
+  row("环容量", std::to_string(uint_member(summary, "ring_capacity")));
+  row("队列溢出", bool_member(summary, "queue_overflow") ? "是" : "否");
+  row("丢弃事件", std::to_string(uint_member(summary, "dropped_events")));
+  row("持久化错误", bool_member(summary, "persistence_error") ? "是" : "否");
+  row("处理失败", std::to_string(uint_member(summary, "processing_failures")));
+  row("吞吐", format_double(double_member(summary, "throughput_trades_per_second")) +
+                   " 笔/秒");
+  row("观测入口速率", format_double(double_member(summary, "ingress_trades_per_second")) +
+                          " 笔事件/秒");
+  row("raw 磁盘写入速率",
+      format_double(double_member(summary, "raw_write_bytes_per_second")) + " 字节/秒");
+  row("每分钟平均唯一成交",
       format_double(double_member(summary, "average_trades_per_minute")));
-  row("Peak unique trades/minute", std::to_string(uint_member(summary, "max_trades_per_minute")));
-  row("Peak unique trades/second", std::to_string(uint_member(summary, "max_trades_per_second")));
-  row("Average sampled CPU", format_double(double_member(summary, "cpu_percent_avg")) + " %");
-  row("Peak sampled RSS", std::to_string(uint_member(summary, "rss_bytes_peak")) + " bytes");
-  row("HTTP status", std::to_string(uint_member(summary, "http_status")));
-  report << "\n## Latency (sampled; microseconds)\n\n";
-  report << "Samples are taken every fifth processed event, capped at 200,000. They measure local "
-            "receive-to-process and receive-to-signal latency, not exchange-to-exchange latency.\n\n";
-  report << "| Stage | p50 | p95 | p99 | Samples |\n|---|---:|---:|---:|---:|\n";
-  report << "| Queue wait " << latency_cell(summary, "queue_wait_latency") << "\n";
-  report << "| Receive to process " << latency_cell(summary, "receive_to_process_latency") << "\n";
-  report << "| Receive to signal " << latency_cell(summary, "receive_to_signal_latency") << "\n\n";
+  row("每分钟峰值唯一成交", std::to_string(uint_member(summary, "max_trades_per_minute")));
+  row("每秒峰值唯一成交", std::to_string(uint_member(summary, "max_trades_per_second")));
+  row("进程 CPU 均值", format_double(double_member(summary, "cpu_percent_avg")) + " %");
+  row("RSS 峰值", std::to_string(uint_member(summary, "rss_bytes_peak")) + " 字节");
+  row("HTTP 状态", std::to_string(uint_member(summary, "http_status")));
+  report << "\n## 延迟（采样；微秒）\n\n";
+  report << "每 5 笔已处理事件采样一次，最多 200,000 条。测量的是本地接收→处理和"
+            "接收→信号延迟，不是交易所到交易所延迟。\n\n";
+  report << "| 阶段 | P50 | P95 | P99 | 样本数 |\n|---|---:|---:|---:|---:|\n";
+  report << "| 队列等待 " << latency_cell(summary, "queue_wait_latency") << "\n";
+  report << "| 接收→处理 " << latency_cell(summary, "receive_to_process_latency") << "\n";
+  report << "| 接收→信号 " << latency_cell(summary, "receive_to_signal_latency") << "\n\n";
 
   const json::Value* gaps = member(summary, "gap_windows");
-  report << "## Reconnect gap record\n\n";
+  report << "## 重连缺口记录\n\n";
   if (gaps && gaps->is_array() && !gaps->array.empty()) {
-    report << "| Generation | Approx. gap (s) | Last frame UTC | Reconnected UTC |\n|---:|---:|---|---|\n";
+    report << "| 代次 | 近似缺口（秒） | 最后帧 UTC | 重连 UTC |\n|---:|---:|---|---|\n";
     for (const auto& gap : gaps->array) {
       report << "| " << uint_member(gap, "generation") << " | "
              << format_double(double_member(gap, "gap_seconds")) << " | "
              << string_member(gap, "disconnected_utc") << " | "
              << string_member(gap, "reconnected_utc") << " |\n";
     }
-    report << "\nA reconnect cannot guarantee that the exchange feed had no missing trades; the "
-              "window above is recorded as a potential gap, not evidence of completeness.\n";
+    report << "\n重连不能保证交易所行情没有缺失成交；上表记录的是潜在缺口，不能作为完整性证明。\n";
   } else {
-    report << "No reconnect gap was observed.\n";
+    report << "未观察到重连缺口。\n";
   }
 
-  report << "\n## Quality gates\n\n";
+  report << "\n## 质量门禁\n\n";
   if (checks.empty()) {
-    report << "- No quality checks available\n";
+    report << "- 无可用质量检查\n";
   } else {
     for (const auto& [name, value] : checks) {
-      report << "- `" << name << "`: **" << (value ? "PASS" : "FAIL") << "**\n";
+      report << "- `" << name << "`（" << check_label(name) << "）：**"
+             << (value ? "通过" : "失败") << "**\n";
     }
   }
-  report << "\n## Artifact integrity (SHA-256)\n\n";
+  report << "\n## 产物完整性（SHA-256）\n\n";
   if (hashes.empty()) {
-    report << "- Not available\n";
+    report << "- 不可用\n";
   } else {
     for (const auto& [name, hash] : hashes) {
-      report << "- `" << name << "`: `" << hash << "`\n";
+      report << "- `" << name << "`：`" << hash << "`\n";
     }
   }
-  report << "\n## Persistence and honest interpretation\n\n";
-  report << "- Raw WebSocket frames are stored as exact text (base JSON escaping only) with "
-            "run_id, connection generation, receive UTC/monotonic timestamps, sequence, payload "
-            "bytes and payload SHA-256.\n";
-  report << "- Raw and derived files are flushed in batches and fsynced every "
-         << string_member(summary, "raw_fsync_policy", "configured interval") <<
-                " and on finalization; finalization errors are reported, never ignored.\n";
-  report << "- A `PASS` requires a real WebSocket connection, at least 99% of the requested "
-            "duration, persisted raw frames, matching SHA-256, zero queue overflow, zero "
-            "persistence/processing failures, and no disconnects, malformed or duplicate trades.\n";
-  report << "- A synthetic benchmark is never evidence of live network throughput. The strategy "
-            "emits labels only; execution is disabled.\n";
+  report << "\n## 持久化与真实性说明\n\n";
+  report << "- 原始 WebSocket 帧以精确文本保存（仅做 JSON 转义），并记录 run_id、连接代次、"
+            "接收 UTC/单调时间、序号、payload 字节数和 payload SHA-256。\n";
+  report << "- raw 与派生文件批量 flush，并按 "
+         << string_member(summary, "raw_fsync_policy", "配置的间隔") << " 及最终确定时 fsync；"
+            "最终确定错误会如实上报，绝不忽略。\n";
+  report << "- `PASS` 要求真实 WebSocket 连接、至少达到请求时长的 99%、raw 帧已落盘、"
+            "SHA-256 一致、零队列溢出、零持久化/处理失败，且无断开、异常帧或重复成交。\n";
+  report << "- 合成基准永远不能作为实时网络吞吐证据。策略只输出标签，执行禁用。\n";
   return report.str();
 }
 

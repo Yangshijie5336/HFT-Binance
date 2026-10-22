@@ -1,21 +1,20 @@
-# Runbook
+# 运行手册
 
-## 1. Prerequisites
+## 1. 前置条件
 
-- C++20 compiler, CMake ≥ 3.20, Ninja
-- Boost Beast/Asio headers (≥ 1.74) and OpenSSL 3.x
-- Writable disk with room for `raw_frames.jsonl` (BTCUSDT is typically a few MB per
-  15 minutes; a bursty window may be larger)
-- Outbound TLS to `stream.binance.com:9443` for live capture
-- No API key is required or accepted
+- C++20 编译器、CMake ≥ 3.20、Ninja
+- Boost Beast/Asio 头文件（≥ 1.74）与 OpenSSL 3.x
+- 可写磁盘，能容纳 `raw_frames.jsonl`（BTCUSDT 通常 15 分钟几 MB，活跃窗口可能更大）
+- 实时采集需要到 `stream.binance.com:9443` 的出站 TLS
+- 不需要也不接受 API Key
 
-On Debian/Ubuntu:
+Debian/Ubuntu：
 
 ```bash
 sudo apt-get install -y build-essential cmake ninja-build libboost-all-dev libssl-dev ca-certificates
 ```
 
-## 2. Build and test
+## 2. 构建与测试
 
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -23,17 +22,16 @@ cmake --build build -j"$(nproc)"
 ctest --test-dir build --output-on-failure
 ```
 
-Expected CTest suite:
+预期 CTest 套件：
 
 - `marketpipe_help`
-- `marketpipe_unit` (17 cases)
-- `marketpipe_integration` (13 loopback WebSocket scenarios)
-- `marketpipe_benchmark_100k` (parse + pipeline + persistence)
+- `marketpipe_unit`（18 个用例）
+- `marketpipe_integration`（14 个本地回环 WebSocket 场景）
+- `marketpipe_benchmark_100k`（解析 + 处理链路 + 持久化）
 
-No CTest test contacts Binance.
+CTest 不访问 Binance。
 
-Windows: run from a Developer PowerShell, set English MSVC include diagnostics so Ninja
-tracks header dependencies, and pass the vcpkg prefix explicitly:
+Windows：在 Developer PowerShell 中运行，设置英文 MSVC include 诊断以便 Ninja 跟踪头文件依赖，并显式传入 vcpkg 前缀：
 
 ```powershell
 $env:VSLANG = "1033"
@@ -43,32 +41,29 @@ cmake --build build -j 8
 ctest --test-dir build --output-on-failure
 ```
 
-If a public header changed and an incremental build seems to ignore it, run
-`cmake --build build --clean-first`. This is a localized-MSVC `/showIncludes` limitation,
-not a source issue.
+如果修改了公共头文件而增量构建似乎没有生效，执行 `cmake --build build --clean-first`。这是本地化 MSVC `/showIncludes` 的限制，不是源码问题。
 
-## 3. Smoke test the live feed
+## 3. 实时行情冒烟测试
 
 ```bash
 ./build/marketpipe capture --symbol BTCUSDT --duration 5 --output-dir data/smoke
 ```
 
-Success looks like:
+成功样例：
 
 ```
 capture result=PASS run_dir=data/smoke/20261022T...Z_BTCUSDT frames=40 processed=40 signals=40
 ```
 
-Then verify independently:
+然后独立校验：
 
 ```bash
 ./build/marketpipe report --run-dir data/smoke/<run-id>
 ```
 
-If `result` is `BLOCKED` with HTTP 451, stop here and record the block; do not use a
-proxy or another jurisdiction to bypass it. Local WebSocket tests still run normally.
+如果结果为 `BLOCKED` 且 HTTP 451，应停止并记录阻塞；不要使用代理或其他司法辖区规避。本地 WebSocket 测试仍可正常运行。
 
-## 4. 900-second acceptance capture
+## 4. 900 秒验收采样
 
 ```bash
 ./build/marketpipe capture \
@@ -78,67 +73,59 @@ proxy or another jurisdiction to bypass it. Local WebSocket tests still run norm
   --run-id live900-BTCUSDT-$(date -u +%Y%m%d)
 ```
 
-Requirements for a valid acceptance run:
+有效验收运行要求：
 
-- actual duration ≥ 891 s;
-- at least one raw frame and one processed trade;
-- `raw_frames_records == frames_received`;
-- `raw_integrity_verified == true`;
-- no queue overflow, dropped events, persistence errors or processing failures;
-- no disconnects, malformed frames, duplicates or out-of-order trades.
+- 实际时长 ≥ 891 秒；
+- 至少一个原始帧和一笔已处理成交；
+- `raw_frames_records == frames_received`；
+- `raw_integrity_verified == true`；
+- 无队列溢出、丢弃、持久化错误或处理失败；
+- 无断开、异常帧、重复或乱序成交。
 
-Run it without competing CPU/disk load. The capture writes a heartbeat-free structured
-log; connection start/end, backoff and potential gaps are recorded in `system.log`.
+运行时避免竞争性的 CPU/磁盘负载。采集器写入结构化日志；连接开始/结束、退避和潜在缺口都在 `system.log`。
 
-During the run:
+运行期间：
 
 ```bash
 tail -f data/runs/<run-id>/system.log
 ```
 
-Do **not** edit or truncate files in the run directory while it is live. A graceful stop
-with Ctrl+C writes a FAIL summary and exits 130; it does not pretend to satisfy the
-duration gate.
+**不要**在运行时编辑或截断目录内文件。Ctrl+C 会优雅停止并写入 FAIL summary、退出码 130；它不会被伪装成满足时长门禁。
 
-## 5. Verify and archive
+## 5. 校验与归档
 
 ```bash
 ./build/marketpipe report --run-dir data/runs/<run-id>
 sha256sum data/runs/<run-id>/raw_frames.jsonl
 ```
 
-`report` recomputes every artifact hash and all raw record hashes. Archive:
+`report` 会重算每个 产物哈希和所有原始记录哈希。归档：
 
 - `summary.json`
 - `verification.json`
 - `performance_report.md`
 - `system.log`
-- `raw_frames.jsonl` and its SHA-256
-- the run start/end UTC timestamps
+- `raw_frames.jsonl` 及其 SHA-256
+- 运行开始/结束 UTC 时间
 
-Large raw captures must not be committed to Git. Keep them locally or attach them to a
-GitHub Release / Actions artifact. The `Manual live capture` workflow uploads the run
-directory as an artifact with 14-day retention.
+大型原始采样不得提交到 Git。保留在本地或附加到 GitHub Release / Actions 产物。`Manual live capture` 工作流会把运行目录作为 产物上传（保留 14 天）。
 
-## 6. Performance benchmarks
+## 6. 性能基准
 
 ```bash
 ./build/marketpipe benchmark --events 100000 --mode all \
   --output-dir data/benchmarks
 ```
 
-This runs:
+运行：
 
-- A. pure parse
-- B. full in-memory pipeline
-- C. full pipeline + raw JSONL persistence
+- A. 纯解析
+- B. 完整内存处理链路
+- C. 完整链路 + raw JSONL 持久化
 
-Each mode reports `events_per_second`, P50/P95/P99, CPU, RSS, raw frame count/bytes,
-dropped/error counts and the SHA-256 of the persisted benchmark file. The output is
-explicitly synthetic and is not real-network throughput. Mode D is measured only from a
-real `capture` run and comes from `summary.json`.
+每种模式报告 `events_per_second`、P50/P95/P99、CPU、RSS、原始帧数量/字节、丢弃/错误数，以及持久化基准文件的 SHA-256。输出明确为合成数据，不是真实网络吞吐。模式 D 只能来自真实 `capture` 的 `summary.json`。
 
-## 7. Replay
+## 7. 回放（Replay）
 
 ```bash
 ./build/marketpipe replay \
@@ -146,8 +133,7 @@ real `capture` run and comes from `summary.json`.
   --output-dir data/replays/<name>
 ```
 
-Replay reproduces normalized events, factors and signals from the durable raw frames.
-Receive-to-process latency is not comparable during replay.
+Replay 从持久化原始帧重放标准化事件、因子和信号。Replay 期间 receive-to-process 延迟不可与实时采集比较。
 
 ## 8. Docker
 
@@ -156,27 +142,21 @@ docker compose build
 docker compose run --rm marketpipe
 ```
 
-The compose service runs a 900 s capture into `/app/data/runs` on the named volume
-`marketpipe-data`. The image runs as UID 10001 and handles SIGTERM with a 60 s grace
-period. The build stage runs CTest; a successful `docker build` is required before
-quoting container results.
+Compose 服务执行 900 秒采集，写入命名卷 `marketpipe-data` 的 `/app/data/runs`。镜像以 UID 10001 运行，SIGTERM 宽限 60 秒。构建阶段执行 CTest；在引用容器结果前必须先完成 `docker build`。
 
-To inspect or archive the volume:
+查看或归档卷：
 
 ```bash
 docker compose run --rm --entrypoint ls marketpipe -l /app/data/runs
 docker compose cp marketpipe:/app/data/runs ./data-from-container
 ```
 
-For a host bind mount, make the directory writable by UID 10001 (for example
-`sudo chown -R 10001:10001 ./data`) or override the compose user; otherwise the non-root
-process cannot persist frames.
+如改用宿主机 bind mount，请确保目录对 UID 10001 可写（例如 `sudo chown -R 10001:10001 ./data`），或覆盖 compose 的 user；否则非 root 进程无法持久化帧。
 
 ## 9. CI
 
-- `.github/workflows/ci.yml`: build, CTest, 100k benchmark, Docker build, artifact upload.
-- `.github/workflows/live-capture.yml`: manual 900 s live run; preserves BLOCKED evidence.
-- `.github/workflows/publish-image.yml`: tag-triggered GHCR publish after tests.
+- `.github/workflows/ci.yml`：构建、CTest、100k 基准、Docker 构建、产物上传。
+- `.github/workflows/live-capture.yml`：手工 900 秒实时运行；保留 BLOCKED 证据。
+- `.github/workflows/publish-image.yml`：打 tag 后经测试发布到 GHCR。
 
-Quote the CI run URL/id and the downloaded artifact, not a local assumption, when
-reporting CI evidence.
+报告 CI 证据时必须引用实际 CI Run URL/编号和下载的产物，不能凭本地假设。

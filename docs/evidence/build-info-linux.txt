@@ -1,7 +1,7 @@
-linux_distribution=Ubuntu 22.04 (WSL2)
-compiler=g++ 11.4.0
-cmake=3.22.1
-ninja=1.10.1
-boost=1.74
-openssl=3.0.2
-ctest=4/4 passed
+linux发行版=Ubuntu 22.04 (WSL2)
+编译器=g++ 11.4.0
+cmake版本=3.22.1
+ninja版本=1.10.1
+boost版本=1.74
+openssl版本=3.0.2
+ctest结果=4/4 通过

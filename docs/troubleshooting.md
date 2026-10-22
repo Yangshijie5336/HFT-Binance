@@ -1,133 +1,100 @@
-# Troubleshooting and failure handling
+# 故障处理
 
-Every capture writes `system.log`, `summary.json` and `verification.json` even when it
-fails. Start there: `failure`, `quality_checks` and the last `ws_*` / `*_failed` log
-records identify the failing layer.
+每次采集失败也会写入 `system.log`、`summary.json` 和 `verification.json`。先看 `failure`、`quality_checks`，以及最后一条 `ws_*` / `*_failed` 日志，通常就能定位失败层。
 
-## HTTP 451 / geographic restriction
+## HTTP 451 / 地域限制
 
-Symptom:
+现象：
 
 ```json
 {"result":"BLOCKED","http_status":451,"http_blocked":true,
  "failure":"Binance WebSocket HTTP 451: geographic access restriction"}
 ```
 
-The collector records `capture_blocked_by_exchange`, stops immediately instead of
-retrying, persists an empty raw file and writes a BLOCKED summary. It does not use
-proxies, VPNs or alternate jurisdictions. Run the local WebSocket integration suite and
-record the block as the acceptance outcome.
+采集器记录 `capture_blocked_by_exchange` 后立即停止，不做重试风暴；会落盘空的 raw 文件并写 BLOCKED summary。它不会使用代理、VPN 或其他司法辖区规避。此时应运行本地 WebSocket 集成测试，并把阻塞作为验收结论记录。
 
-`403` from a WAF/CDN is reported as `FAIL` with `http_status` and the response body
-prefix, because it is not necessarily a legal-access restriction.
+CDN/WAF 返回的 `403` 作为 `FAIL` 上报，带 `http_status` 和响应体前缀，因为它不一定是法律访问限制。
 
-## TLS certificate verification failure
+## TLS 证书校验失败
 
-Symptom:
+现象：
 
 ```json
 {"result":"FAIL","tls_failure":true,
  "failure":"TLS certificate verification failed: certificate verify failed ..."}
 ```
 
-Checks:
+检查：
 
-1. OpenSSL trust sources: `--ca-file`, `MARKETPIPE_CA_FILE`, `SSL_CERT_FILE`, the bundled
-   `certs/cacert.pem`, OpenSSL default paths, Windows Root store.
-2. `system.log` contains `tls_ca_bundle_loaded` with the selected path, or
-   `tls_ca_bundle_load_failed` with the OpenSSL error.
-3. System clock must be correct; expired certificates cannot be bypassed.
-4. Corporate TLS interception requires installing the corporate root CA explicitly via
-   `--ca-file`. There is no `--insecure` mode.
+1. 信任来源：`--ca-file`、`MARKETPIPE_CA_FILE`、`SSL_CERT_FILE`、内置 `certs/cacert.pem`、OpenSSL 默认路径、Windows Root 存储。
+2. `system.log` 中应有 `tls_ca_bundle_loaded` 记录所选路径，或 `tls_ca_bundle_load_failed` 记录 OpenSSL 错误。
+3. 系统时钟必须正确；过期证书不能绕过校验。
+4. 企业 TLS 拦截需要显式通过 `--ca-file` 安装企业根 CA。不存在 `--insecure` 模式。
 
-Never "fix" this by disabling verification.
+绝不要通过关闭校验来“修复”该问题。
 
-## DNS / connection refused
+## DNS / 连接被拒绝
 
-Symptom: repeated `ws_connect_failed` with `consecutive_failures`, then
-`ws_max_connect_failures` and `result=FAIL`.
+现象：重复 `ws_connect_failed`，带 `consecutive_failures`，随后 `ws_max_connect_failures` 和 `result=FAIL`。
 
-- Verify DNS and `curl -I https://stream.binance.com:9443` from the same host.
-- Check firewall/proxy egress; the collector does not read proxy environment variables.
-- Backoff is bounded (default 1 s → 15 s, 10 consecutive failures). A refused connection
-  always yields a non-zero exit code.
+- 在同一主机验证 DNS 和 `curl -I https://stream.binance.com:9443`。
+- 检查防火墙/代理出站；采集器不读取代理环境变量。
+- 退避有界（默认 1 秒 → 15 秒，连续 10 次失败）。连接被拒绝一定返回非零退出码。
 
-## Idle timeout / disconnect
+## 空闲超时 / 断开
 
-Beast keep-alive pings are enabled with `--idle-timeout-ms` (default 90 s). The stream
-closes if no data or pong arrives within two idle intervals. The collector counts a
-disconnect, reconnects with backoff, increments `connection_generations` and records a
-`gap_windows` entry. The run result becomes `PARTIAL`, not `PASS`; a reconnect cannot
-prove the feed was complete.
+Beast keep-alive ping 由 `--idle-timeout-ms` 控制（默认 90 秒）。两个空闲周期内没有数据或 pong，连接视为断开。采集器计数 disconnect，按退避重连，递增 `connection_generations`，并记录 `gap_windows`。运行结果变为 `PARTIAL` 而不是 `PASS`；重连不能证明行情完整。
 
-## Queue overflow / slow consumer
+## 队列溢出 / 消费者过慢
 
-Symptom:
+现象：
 
 ```json
 {"queue_overflow":true,"dropped_events":N,"result":"FAIL",
  "failure":"bounded queue overflow: sample invalid"}
 ```
 
-The collector does not silently discard frames. It logs `raw_queue_overflow` or
-`process_queue_overflow`, marks the sample invalid and stops. Remedies:
+采集器不会静默丢弃，而是记录 `raw_queue_overflow` 或 `process_queue_overflow`，标记样本无效并停止。处理方向：
 
-- Check whether the disk is the bottleneck (fsync cadence, antivirus, network drive).
-- Increase `--queue-capacity` for short bursts, but do not use it to hide sustained
-  overload.
-- Lower `--fsync-every` only if durability requirements allow; the default is 100.
-- A sustained overload is a capacity finding, not a reason to drop data.
+- 检查磁盘是否是瓶颈（fsync 频率、杀毒软件、网络盘）。
+- 短时突发可增大 `--queue-capacity`，但不能用它掩盖持续过载。
+- 仅在持久化要求允许时降低 `--fsync-every`；默认 100。
+- 持续过载是容量问题，不是丢弃数据的理由。
 
-## Disk full / write failure / final fsync failure
+## 磁盘满 / 写入失败 / 最终 fsync 失败
 
-Symptoms: `persistence_error=true`, `raw_write_failed`, `writer_finalize_failed`,
-`raw_finalize_failed`, or `ENOSPC`. Exit code 2.
+现象：`persistence_error=true`、`raw_write_failed`、`writer_finalize_failed`、`raw_finalize_failed` 或 `ENOSPC`，退出码 2。
 
-- Free space; run directories are append-only and never overwritten.
-- The collector detects short writes, `fflush`/`fsync` errors and finalization errors.
-- On failure the sample is `FAIL`; `report` will also fail its record/hash checks if the
-  file is truncated.
-- Do not copy a partial run directory into an acceptance report.
+- 清理空间；运行目录是追加式写入，从不覆盖。
+- 采集器检测短写、`fflush`/`fsync` 错误和最终确定错误。
+- 失败样本为 `FAIL`；如果文件被截断，`report` 的记录/哈希校验也会失败。
+- 不要把部分运行目录复制进验收报告。
 
 ## SIGINT / SIGTERM
 
-The handler only sets a flag. Within ~50 ms the network session is cancelled, queues are
-closed and drained, raw and derived files are flushed and fsynced, and a summary is
-written with `stopped_by_signal=true`, `result=FAIL`, exit code 130.
+处理器只设置标志。约 50 ms 内网络会话被取消，队列关闭并排空，raw 与派生文件 flush/fsync，summary 写入，`stopped_by_signal=true`，结果 `FAIL`，退出码 130。
 
-If the process is force-killed (SIGKILL / `docker kill`), only data already fsynced is
-guaranteed. Use `docker stop` (SIGTERM) with a grace period ≥ 30 s.
+如果进程被强制杀死（SIGKILL / `docker kill`），只能保证已经 fsync 的数据。请使用 `docker stop`（SIGTERM）并给予 ≥ 30 秒宽限。
 
-## Report verification mismatch
+## 报告校验不匹配
 
-`report` returns 2 when:
+以下情况 `report` 返回 2：
 
-- `summary.json` says PASS but an artifact hash differs;
-- `raw_frames.jsonl` has a bad record, non-increasing sequence or payload hash mismatch;
-- the record count differs from `frames_received`/`raw_frames_records`;
-- a required artifact is missing.
+- `summary.json` 声称 PASS，但某个 产物哈希不同；
+- `raw_frames.jsonl` 有坏记录、非递增序号或 payload 哈希不匹配；
+- 记录数与 `frames_received`/`raw_frames_records` 不一致；
+- 必需产物 缺失。
 
-Do not edit raw files after capture. To verify an archived run, copy the directory
-unchanged and run `report --run-dir`.
+采集后不要编辑原始文件。校验归档运行时，原样复制目录并执行 `report --run-dir`。
 
-## Windows DLL not found (0xC0000135)
+## Windows DLL 找不到（0xC0000135）
 
-The build copies `libssl-3-x64.dll` and `libcrypto-3-x64.dll` next to the executables.
-If they are missing, ensure `CMAKE_PREFIX_PATH` points at the vcpkg installation that
-actually supplied OpenSSL, then reconfigure. Visual Studio can inject a different
-`VCPKG_ROOT`; the CMake script derives the DLL directory from the located OpenSSL
-configuration as well.
+构建会把 `libssl-3-x64.dll` 和 `libcrypto-3-x64.dll` 复制到可执行文件旁。若缺失，确认 `CMAKE_PREFIX_PATH` 指向真正提供 OpenSSL 的 vcpkg 安装后重新配置。Visual Studio 可能注入不同的 `VCPKG_ROOT`；CMake 也会根据定位到的 OpenSSL 配置推导 DLL 目录。
 
-## Docker data disappears
+## Docker 数据消失
 
-The container writes only under `/app/data`. The provided compose file uses the named
-volume `marketpipe-data`, which is initialized with the image directory's ownership and
-is writable by UID 10001. If you switch to a host bind mount, make it writable by UID
-10001 (or override `user:`); otherwise raw writes fail with a persistence error.
-`docker compose down -v` removes the named volume and its captures.
+容器只写 `/app/data`。提供的 compose 使用命名卷 `marketpipe-data`，其初始所有权来自镜像目录，UID 10001 可写。如果改用宿主机 bind mount，请确保其对 UID 10001 可写（或覆盖 `user:`），否则 raw 写入会报持久化错误。`docker compose down -v` 会删除命名卷及其采集数据。
 
-## Synthetic benchmark is not live throughput
+## 合成基准不是实时吞吐
 
-Any benchmark output contains `"benchmark_type":"SYNTHETIC_BENCHMARK"` and
-`"live_network":false`. Never copy those numbers into a live-capture acceptance claim.
-Mode D must come from a real `capture` run's `summary.json`.
+任何 benchmark 输出都包含 `"benchmark_type":"SYNTHETIC_BENCHMARK"` 和 `"live_network":false`。不要把这类数字写入实时验收结论。模式 D 必须来自真实 `capture` 的 `summary.json`。
