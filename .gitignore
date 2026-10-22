@@ -15,3 +15,5 @@ data/runs/**
 .tmp-*/
 
 .pytest-*/
+
+build-cpp/

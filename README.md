@@ -1,4 +1,17 @@
-# MarketPipe HFT Demo
+# MarketPipe HFT Demo (C++20)
+
+The primary implementation is now a portable C++20/CMake project under `cpp/`. The original Python implementation remains as a migration reference. The C++ core provides Binance trade parsing, durable JSONL replay, rolling factors, deterministic signals, and a synthetic benchmark without third-party runtime dependencies.
+
+## Build C++
+
+```powershell
+cmake -S . -B build-cpp -G Ninja
+cmake --build build-cpp
+ctest --test-dir build-cpp --output-on-failure
+.\build-cpp\marketpipe.exe synthetic --events 100000
+```
+
+`replay --input <raw_frames.jsonl> <output-dir>` regenerates normalized events, signals, and a replay summary. The C++ `capture` command currently exits `BLOCKED` until a platform WebSocket transport is selected; it never pretends to have captured live data.
 
 A reproducible real-time public trade-feed capture and processing pipeline. It captures Binance Spot WebSocket `btcusdt@trade` trades, durably journals every raw frame, processes validated events through a bounded in-memory queue and ring buffer, calculates rolling factors, emits deterministic demo signals, and reports measured performance.
 
