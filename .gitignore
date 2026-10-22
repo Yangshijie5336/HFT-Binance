@@ -13,3 +13,5 @@ data/runs/**
 
 .pytest-final*/
 .tmp-*/
+
+.pytest-*/
