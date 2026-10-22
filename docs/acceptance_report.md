@@ -170,7 +170,7 @@ Total Test time (real) = 24.56 sec
 - 已实现多阶段 Dockerfile、非 root UID 10001、命名卷 `marketpipe-data`、构建阶段 CTest 和 `STOPSIGNAL SIGTERM`。
 - **本机未实际执行 Docker**：当前 Windows 环境没有 Docker 引擎或 `docker` CLI。不能声称本地镜像已验证。CI 工作流会构建镜像并验证其以非 root 启动。
 - CI 使用的 Linux 构建/CTest 路径已在 WSL2 实际执行并通过 4/4。
-- 提交将推送到 `origin/main`，因此 GitHub Actions 工作流由推送触发。仓库的 Actions 页面/API 需要认证，本环境没有已登录的 `gh` 或可用令牌，因此**不声称任何 Actions Run URL、状态或产物**。CI 证据必须从推送后的实际 Actions 运行中读取。
+- 提交已推送到 `origin/main`，因此 GitHub Actions 工作流由推送触发。仓库的 Actions 页面/API 需要认证，本环境没有已登录的 `gh` 或可用令牌，因此**不声称任何 Actions Run URL、状态或产物**。CI 证据必须从推送后的实际 Actions 运行中读取。
 
 ## 复现
 
