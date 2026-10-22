@@ -189,8 +189,12 @@ commit; see [`docs/evidence/ctest-linux.txt`](evidence/ctest-linux.txt).
 - **Docker was not executed locally** because this Windows host has no Docker engine or
   `docker` CLI. Do not claim a locally verified image. The CI workflow builds the image
   and verifies it starts as non-root.
-- The Linux build/CTest path used by CI was executed in WSL2 and passed 4/4, but GitHub
-  Actions itself was not run in this session; no Actions run URL or artifact is claimed.
+- The Linux build/CTest path used by CI was executed in WSL2 and passed 4/4.
+- The commits were pushed to `origin/main`, so the GitHub Actions workflows are
+  configured and triggered by the push. The repository requires authentication for its
+  Actions pages/API, and no authenticated `gh` client or token was available in this
+  environment, so **no Actions run URL, status or artifact is claimed here**. CI evidence
+  must be read from the actual Actions run after the push.
 
 ## Reproduction
 
