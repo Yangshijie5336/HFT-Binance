@@ -1,0 +1,3 @@
+# AI development log
+
+The assistant audited the existing implementation, preserved its pipeline interfaces, and replaced the default Kraken protocol with Binance Spot `@trade`. Human-verifiable changes include Binance field parsing (`e/E/s/t/p/q/T/m/M`), maker-side to aggressor-side mapping, raw payload hashes and connection generations. The bundled Python environment installed dependencies and ran the offline suite; the suite passed 9 tests, compileall passed, and pip check passed. A live probe reached Binance but was rejected with HTTP 451, so no real trade or 900-second result is claimed. Docker and GitHub publication remain unverified because their CLIs and authenticated repository session are unavailable.

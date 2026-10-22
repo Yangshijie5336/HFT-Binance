@@ -1,0 +1,23 @@
+{
+  "project": "marketpipe-hft-demo",
+  "validation_date": "2026-10-22",
+  "unit_tests": {"status": "PASS", "passed": 8},
+  "compileall": {"status": "PASS"},
+  "editable_install": {"status": "PASS", "command": "python -m pip install -e . --no-deps --no-build-isolation"},
+  "cli_help": {"status": "PASS"},
+  "toml_parse": {"status": "PASS"},
+  "docker_compose_yaml_parse": {"status": "PASS"},
+  "github_workflow_yaml_parse": {"status": "PASS", "scope": "generic YAML syntax only; GitHub schema not validated remotely"},
+  "live_websocket_handshake": {
+    "status": "BLOCKED",
+    "error_class": "DNS_RESOLUTION_FAILURE",
+    "error": "gaierror(-3, 'Temporary failure in name resolution')",
+    "data_collected": false
+  },
+  "live_900_second_capture": {"status": "NOT_EXECUTED", "reason": "public WebSocket DNS/network unavailable in authoring environment"},
+  "docker_image_build": {"status": "NOT_EXECUTED", "reason": "Docker CLI not installed in authoring environment"},
+  "public_github_repository": {"status": "NOT_PUBLISHED", "reason": "authenticated GitHub publishing session not available"},
+  "orders_sent": 0,
+  "cancellations_sent": 0,
+  "execution_enabled": false
+}

@@ -1,0 +1,15 @@
+services:
+  marketpipe:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: marketpipe-hft-demo:0.1.0
+    command: ["capture", "--duration", "900", "--symbol", "BTCUSDT", "--output-dir", "/app/data/runs"]
+    restart: "no"
+    init: true
+    stop_grace_period: 30s
+    environment:
+      MARKETPIPE_WS_URL: "wss://ws.kraken.com/v2"
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ./data:/app/data
