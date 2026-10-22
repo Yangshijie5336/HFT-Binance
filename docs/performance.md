@@ -22,9 +22,9 @@
 
 合成模式：`events`、`events_per_second`、`duration_seconds`、`p50_us`、`p95_us`、`p99_us`、`latency_samples`、`signals_emitted`、`raw_frames_written`、`raw_frames_sha256`、`output_file`、`cpu_percent`、`rss_bytes`、`dropped_events`、`errors`。
 
-真实模式（来自 `summary.json`）：`duration_actual_seconds`、`throughput_trades_per_second`、`ingress_trades_per_second`、`receive_to_process_latency`、`receive_to_signal_latency`、`queue_wait_latency`、`queue_high_water`、`queue_capacity`、`cpu_percent_avg`、`rss_bytes_peak`、`raw_frames_records`、`raw_frames_bytes`、`trades_processed`、`signals_emitted`、`duplicates`、`dropped_events`、`processing_failures`、`reconnects`、`disconnects`。
+真实模式（来自 `summary.json`）：`duration_actual_seconds`、`drain_elapsed_seconds`、`processing_elapsed_seconds`、`throughput_trades_per_second`、`ingress_trades_per_second`、`receive_to_process_latency`、`receive_to_signal_latency`、`queue_wait_latency`、`queue_high_water`、`queue_capacity`、`cpu_percent_avg`、`rss_bytes_peak`、`raw_frames_records`、`raw_frames_bytes`、`trades_processed`、`signals_emitted`、`duplicates`、`out_of_order`、`dropped_events`、`processing_failures`、`reconnects`、`disconnects`。
 
-磁盘写入速率 = `raw_frames_bytes / duration_actual_seconds`。
+磁盘写入速率 = `raw_frames_bytes / duration_actual_seconds`。`duration_actual_seconds` 在停止接收时固定，不包含排空；PASS 要求实际采样严格达到目标时长。`drain_elapsed_seconds` 单独记录排空/最终确定耗时，不能用于补足采样时长。
 
 ## 环境
 
@@ -44,11 +44,11 @@
 
 | 模式 | events/s | P50 µs | P95 µs | P99 µs | CPU % | RSS B | 错误/丢弃 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| A. 纯解析 | 163,315 | 3.5 | 6.4 | 8.0 | 102.0 | 25,489,408 | 0 / 0 |
-| B. 完整处理链路 | 135,678 | 6.4 | 11.5 | 17.6 | 98.7 | 26,112,000 | 0 / 0 |
-| C. B + raw 持久化 | 53,132 | 10.6 | 407.5 | 636.5 | 86.5 | 27,082,752 | 0 / 0 |
+| A. 纯解析 | 165,667 | 3.6 | 5.4 | 7.5 | 100.9 | 25,485,312 | 0 / 0 |
+| B. 完整处理链路 | 136,562 | 6.5 | 9.6 | 14.9 | 99.7 | 26,124,288 | 0 / 0 |
+| C. B + raw 持久化 | 42,148.8 | 14.1 | 392.4 | 693.3 | 84.1 | 27,037,696 | 0 / 0 |
 
-模式 A 不计算信号。B/C 共产生 99,991 个合成非 HOLD 标签。模式 C 写入 100,000 个原始帧、51,363,504 字节，SHA-256 为 `84eb486b8050eb47a1e84cc829e8df53ee4d81f8b0815abe00b54e1fe43642a7`。进程 CPU 可以超过 100%，因为它是累计 CPU 时间除以墙钟时间。
+模式 A 不计算信号。B/C 共产生 99,991 个合成非 HOLD 标签。模式 C 写入 100,000 个原始帧、51,363,504 字节，SHA-256 为 `1c4193c1a80dbb7dbea003e450979dc83e225251c26d8445596d6f1393143ad8`。进程 CPU 可以超过 100%，因为它是累计 CPU 时间除以墙钟时间。
 
 可复现入口：
 
@@ -60,29 +60,30 @@
 
 ### D — 真实 Binance 900 秒采样
 
-2026-10-22 04:39:34.155 UTC 至 04:54:34.609 UTC 执行（`live900-BTCUSDT-20261022`），结果 **PASS**：
+2026-10-22 12:01:29.455 UTC 至 12:16:30.005 UTC 执行（`live900-BTCUSDT-20261022-v2`），结果 **PASS**：
 
 | 指标 | 数值 |
 |---|---:|
-| 实际时长 | 900.1129 秒 |
-| 帧数 / raw 记录数 | 24,903 / 24,903 |
-| 已处理成交 / 信号 | 24,903 / 24,903 |
-| 吞吐 | 27.67 笔/秒 |
-| raw 字节 / 磁盘写入速率 | 19,881,198 B / 22,087 字节/秒 |
-| 队列峰值 / 容量 | 292 / 65,536 |
+| 实际采样时长 | 900.0715 秒 |
+| 排空/最终确定时长 | 0.0426 秒（不计入采样） |
+| 帧数 / raw 记录数 | 32,499 / 32,499 |
+| 已处理成交 / 信号 | 32,499 / 32,499 |
+| 吞吐 | 36.11 笔/秒 |
+| raw 字节 / 磁盘写入速率 | 26,113,033 B / 29,012 字节/秒 |
+| 队列峰值 / 容量 | 485 / 65,536 |
 | 重复 / 乱序 / 异常帧 | 0 / 0 / 0 |
 | 重连 / 断开 | 0 / 0 |
 | 队列溢出 / 丢弃 / 持久化错误 | 0 / 0 / 0 |
-| CPU 均值 / RSS 峰值 | 0.309 % / 36,896,768 B |
-| raw SHA-256 | `5836675014897976d47654e8d0fde5f765f7ff129d0ecba9c413d5c5a82919b8` |
+| CPU 均值 / RSS 峰值 | 0.418 % / 41,607,168 B |
+| raw SHA-256 | `7495d8d0fdc92840ee0ccacb1646e9a4a0467ede175781400cee820be66a5301` |
 
 | 阶段 | P50 µs | P95 µs | P99 µs |
 |---|---:|---:|---:|
-| 队列等待 | 565.6 | 3,118.2 | 6,201.0 |
-| 接收→处理 | 731.9 | 19,401.1 | 22,655.5 |
-| 接收→信号 | 731.8 | 19,401.1 | 22,655.4 |
+| 队列等待 | 875.3 | 5,448.1 | 13,054.0 |
+| 接收→处理 | 1,086.0 | 20,050.0 | 31,220.2 |
+| 接收→信号 | 1,085.9 | 20,049.9 | 31,220.1 |
 
-该窗口信号为 24,903 个 HOLD / 0 个 BUY / 0 个 SELL。21 笔滚动收益在 -7.346e-05…+8.081e-05 之间，低于 1e-4 动量门限；没有为了制造信号而人为放松策略。完整证据与哈希见[验收报告](acceptance_report.md)。
+该窗口信号为 32,499 个 HOLD / 0 个 BUY / 0 个 SELL。21 笔滚动收益在 -5.136e-05…+7.533e-05 之间，低于 1e-4 动量门限；没有为了制造信号而人为放松策略。完整证据与哈希见[验收报告](acceptance_report.md)。
 
 ## 解释边界
 

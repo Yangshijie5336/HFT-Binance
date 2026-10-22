@@ -1,6 +1,6 @@
 # 验收证据目录
 
-本目录只保存小型、可提交的验收证据；大型 raw 与派生文件保留在 `data/runs/live900-BTCUSDT-20261022/` 或 CI 产物 中，不进入 Git。
+本目录只保存小型、可提交的验收证据；大型 raw 与派生文件保留在 `data/runs/live900-BTCUSDT-20261022-v2/` 或 CI 产物中，不进入 Git。
 
 | 文件 | 内容 |
 |---|---|
@@ -10,6 +10,9 @@
 | `system-log.jsonl` | 900 秒运行的结构化 JSONL 日志副本 |
 | `raw-frames.sha256.txt` | 原始文件字节数、记录数、SHA-256 与外部校验时间 |
 | `replay-summary.json` | 对 900 秒 raw 文件执行 replay 的汇总 |
+| `replay-parity.txt` | 实时与 replay 的因子/信号业务输出逐项对比结果 |
+| `replay-regression.txt` | 31 秒时间间隔、错误哈希、非法 JSON 的回放回归证据 |
+| `tsan.txt` | ThreadSanitizer 构建与选中场景的竞态检查结果 |
 | `benchmark-100k.json` | 100,000 事件 A/B/C 合成基准原始输出 |
 | `build-info.txt` | Windows 构建工具链信息 |
 | `build-info-linux.txt` | WSL2 Ubuntu 构建工具链信息 |
@@ -18,10 +21,12 @@
 
 CTest 原始日志中可能包含 CTest 自身的英文/本地化输出，这些是未加工的原始证据，未做改写。其他说明性文档均为中文。
 
-SHA-256：
+900 秒严格采样（`live900-BTCUSDT-20261022-v2`）：
 
 ```
-5836675014897976d47654e8d0fde5f765f7ff129d0ecba9c413d5c5a82919b8  raw_frames.jsonl
+实际采样: 900.0714655 秒（不含 0.0426052 秒排空）
+记录数:   32499
+SHA-256:  7495d8d0fdc92840ee0ccacb1646e9a4a0467ede175781400cee820be66a5301  raw_frames.jsonl
 ```
 
 完整验收结论见 [`../acceptance_report.md`](../acceptance_report.md)。

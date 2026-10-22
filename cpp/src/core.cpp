@@ -1,6 +1,7 @@
 #include "marketpipe.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <cmath>
 #include <csignal>
@@ -302,6 +303,7 @@ Factors FactorEngine::update(const Trade& trade) {
   factors.qty = trade.qty;
   factors.exchange_ts_ns = trade.exchange_ts_ns;
   factors.received_ns = trade.received_steady_ns;
+  factors.out_of_order = trade.out_of_order;
   factors.window_trades = window_.size();
   factors.imbalance = total_qty > 0 ? (buy_qty_ - sell_qty_) / total_qty : 0.0;
   factors.return_n =
@@ -317,6 +319,7 @@ Signal evaluate(const Factors& factors) {
   signal.trade_id = factors.trade_id;
   signal.price = factors.price;
   signal.created_steady_ns = steady_ns();
+  signal.out_of_order = factors.out_of_order;
   const double score = std::clamp(factors.imbalance * 0.7 + factors.return_n * 1000.0 * 0.3, -1.0,
                                   1.0);
   if (factors.imbalance >= 0.15 && factors.return_n >= 0.0001) {
@@ -382,17 +385,199 @@ void Journal::close() {
   file_ = nullptr;
 }
 
+namespace {
+
+struct ReplayEnvelope {
+  std::string payload;
+  std::string received_utc;
+  std::string connection_id;
+  std::uint64_t connection_generation{1};
+  std::uint64_t frame_seq{};
+  std::int64_t received_ns{};
+};
+
+std::string lowercase_ascii(std::string value) {
+  std::transform(value.begin(), value.end(), value.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return value;
+}
+
+// Validates the collector's raw JSONL envelope before any business replay.
+// A modified payload, bad hash, missing timestamp or reordered metadata is a
+// hard integrity failure, not a frame to skip.
+bool parse_replay_envelope(const std::string& line, std::uint64_t line_no,
+                           ReplayEnvelope& envelope, std::string& error) {
+  json::Value record;
+  json::ParseError parse_error;
+  if (!json::parse(line, record, parse_error) || !record.is_object()) {
+    error = "line " + std::to_string(line_no) + ": invalid raw JSON object";
+    return false;
+  }
+  const json::Value* record_type = record.find("record_type");
+  if (record_type && (!record_type->is_string() ||
+                      record_type->text != "raw_websocket_frame")) {
+    error = "line " + std::to_string(line_no) + ": unsupported record_type";
+    return false;
+  }
+  const json::Value* payload = record.find("payload");
+  const json::Value* payload_hash = record.find("payload_sha256");
+  const json::Value* payload_bytes = record.find("payload_bytes");
+  const json::Value* seq = record.find("frame_seq");
+  const json::Value* generation = record.find("connection_generation");
+  const json::Value* received = record.find("received_monotonic_ns");
+  if (!received) received = record.find("received_ns");
+  const json::Value* received_utc = record.find("received_utc");
+  if (!payload || !payload->is_string() || !payload_hash || !payload_hash->is_string() ||
+      !seq || !generation || !received || !received_utc || !received_utc->is_string()) {
+    error = "line " + std::to_string(line_no) + ": missing raw replay metadata";
+    return false;
+  }
+  if (payload->text.empty()) {
+    error = "line " + std::to_string(line_no) + ": empty payload";
+    return false;
+  }
+  const std::string actual_hash = sha256_hex(payload->text);
+  if (lowercase_ascii(payload_hash->text) != lowercase_ascii(actual_hash)) {
+    error = "line " + std::to_string(line_no) + ": payload SHA-256 mismatch";
+    return false;
+  }
+  if (payload_bytes) {
+    unsigned long long declared_bytes = 0;
+    if (!json::to_uint64(*payload_bytes, declared_bytes) ||
+        declared_bytes != payload->text.size()) {
+      error = "line " + std::to_string(line_no) + ": payload_bytes mismatch";
+      return false;
+    }
+  }
+  unsigned long long seq_value = 0;
+  unsigned long long generation_value = 0;
+  long long received_value = 0;
+  if (!json::to_uint64(*seq, seq_value) || seq_value == 0) {
+    error = "line " + std::to_string(line_no) + ": invalid frame_seq";
+    return false;
+  }
+  if (!json::to_uint64(*generation, generation_value) || generation_value == 0) {
+    error = "line " + std::to_string(line_no) + ": invalid connection_generation";
+    return false;
+  }
+  if (!json::to_int64(*received, received_value) || received_value <= 0) {
+    error = "line " + std::to_string(line_no) + ": invalid received_monotonic_ns";
+    return false;
+  }
+  const json::Value* connection_id = record.find("connection_id");
+  envelope.payload = payload->text;
+  envelope.received_utc = received_utc->text;
+  envelope.connection_id =
+      connection_id && connection_id->is_string() ? connection_id->text : "";
+  envelope.connection_generation = generation_value;
+  envelope.frame_seq = seq_value;
+  envelope.received_ns = received_value;
+  return true;
+}
+
+}  // namespace
+
 int replay(const std::filesystem::path& input, const std::filesystem::path& output) {
-  std::ifstream in(input, std::ios::binary);
-  if (!in) {
+  std::ifstream input_check(input, std::ios::binary);
+  if (!input_check) {
     std::cerr << "cannot open input: " << input.string() << '\n';
     return 2;
   }
+  input_check.close();
   std::string error;
   if (!ensure_directory(output, error)) {
     std::cerr << error << '\n';
     return 2;
   }
+  for (const char* name : {"normalized_events.jsonl", "factors.jsonl", "signals.jsonl",
+                           "replay_summary.json"}) {
+    std::error_code remove_error;
+    std::filesystem::remove(output / name, remove_error);
+  }
+  std::string input_sha;
+  std::string hash_error;
+  if (!sha256_file(input, input_sha, hash_error)) {
+    std::cerr << hash_error << '\n';
+    return 2;
+  }
+
+  // Pass 1: validate envelope, SHA-256, sequence and saved receive timing.
+  std::ifstream validate_input(input, std::ios::binary);
+  std::uint64_t records_read = 0;
+  std::uint64_t integrity_errors = 0;
+  std::uint64_t frames_validated = 0;
+  std::uint64_t last_seq = 0;
+  std::uint64_t last_generation = 0;
+  std::int64_t last_received_ns = 0;
+  std::string first_error;
+  std::string line;
+  while (std::getline(validate_input, line)) {
+    ++records_read;
+    if (line.empty()) {
+      ++integrity_errors;
+      if (first_error.empty()) {
+        first_error = "line " + std::to_string(records_read) + ": blank line";
+      }
+      continue;
+    }
+    ReplayEnvelope envelope;
+    std::string record_error;
+    if (!parse_replay_envelope(line, records_read, envelope, record_error)) {
+      ++integrity_errors;
+      if (first_error.empty()) first_error = record_error;
+      continue;
+    }
+    if (envelope.frame_seq <= last_seq) {
+      ++integrity_errors;
+      if (first_error.empty()) {
+        first_error = "line " + std::to_string(records_read) +
+                      ": frame_seq is not strictly increasing";
+      }
+      continue;
+    }
+    if (envelope.connection_generation < last_generation) {
+      ++integrity_errors;
+      if (first_error.empty()) {
+        first_error = "line " + std::to_string(records_read) +
+                      ": connection_generation went backwards";
+      }
+      continue;
+    }
+    if (envelope.received_ns < last_received_ns) {
+      ++integrity_errors;
+      if (first_error.empty()) {
+        first_error = "line " + std::to_string(records_read) +
+                      ": received_monotonic_ns went backwards";
+      }
+      continue;
+    }
+    last_seq = envelope.frame_seq;
+    last_generation = envelope.connection_generation;
+    last_received_ns = envelope.received_ns;
+    ++frames_validated;
+  }
+
+  if (integrity_errors > 0) {
+    std::ostringstream summary;
+    summary << "{\"result\":\"FAIL\",\"replay\":true,\"input\":\""
+            << json::escape(input.string()) << "\",\"input_sha256\":\"" << input_sha
+            << "\",\"records_read\":" << records_read
+            << ",\"frames_validated\":" << frames_validated
+            << ",\"integrity_errors\":" << integrity_errors
+            << ",\"trades_processed\":0,\"duplicates\":0,\"out_of_order\":0"
+            << ",\"malformed_frames\":0,\"first_error\":\"" << json::escape(first_error)
+            << "\",\"exit_code\":2,\"execution_enabled\":false}\n";
+    if (!atomic_write_file(output / "replay_summary.json", summary.str(), error)) {
+      std::cerr << error << '\n';
+      return 2;
+    }
+    std::cerr << "replay rejected corrupt raw input: " << first_error << '\n';
+    std::cout << summary.str();
+    return 2;
+  }
+
+  // Pass 2: replay with the exact saved receive clock and frame metadata.
+  std::ifstream in(input, std::ios::binary);
   JsonlFileWriter events(output / "normalized_events.jsonl", 100);
   JsonlFileWriter factors_out(output / "factors.jsonl", 100);
   JsonlFileWriter signals_out(output / "signals.jsonl", 100);
@@ -403,48 +588,33 @@ int replay(const std::filesystem::path& input, const std::filesystem::path& outp
 
   FactorEngine engine;
   TradeDeduplicator dedup;
-  std::uint64_t line_no = 0;
   std::uint64_t valid = 0;
   std::uint64_t malformed = 0;
   std::uint64_t duplicates = 0;
   std::uint64_t out_of_order = 0;
-  std::string line;
   while (std::getline(in, line)) {
-    ++line_no;
     if (line.empty()) continue;
-    std::string payload = line;
-    std::uint64_t generation = 1;
-    std::string received_utc = utc_now_iso();
-    std::int64_t received_ns = steady_ns();
-    json::Value record;
-    json::ParseError parse_error;
-    if (json::parse(line, record, parse_error) && record.is_object()) {
-      const json::Value* payload_node = record.find("payload");
-      if (payload_node && payload_node->is_string()) {
-        payload = payload_node->text;
-        const json::Value* generation_node = record.find("connection_generation");
-        if (generation_node) {
-          unsigned long long parsed_generation = 0;
-          if (json::to_uint64(*generation_node, parsed_generation)) {
-            generation = parsed_generation;
-          }
-        }
-        const json::Value* received_node = record.find("received_utc");
-        if (received_node && received_node->is_string()) received_utc = received_node->text;
-      }
+    ReplayEnvelope envelope;
+    std::string record_error;
+    // Pass 1 already validated this record; a failure here is an I/O anomaly.
+    if (!parse_replay_envelope(line, records_read, envelope, record_error)) {
+      std::cerr << "replay input changed between validation and replay: " << record_error
+                << '\n';
+      return 2;
     }
     ParseContext context;
     context.expected_symbol = "";
-    context.connection_generation = generation;
-    context.frame_seq = line_no;
-    context.received_utc = received_utc;
-    context.received_steady_ns = received_ns;
-    ParsedMessage parsed = parse_binance_message(payload, context);
+    context.connection_generation = envelope.connection_generation;
+    context.connection_id = envelope.connection_id;
+    context.frame_seq = envelope.frame_seq;
+    context.received_utc = envelope.received_utc;
+    context.received_steady_ns = envelope.received_ns;
+    ParsedMessage parsed = parse_binance_message(envelope.payload, context);
     if (parsed.status == ParseStatus::Malformed) {
       ++malformed;
       continue;
     }
-    for (const Trade& trade : parsed.trades) {
+    for (Trade trade : parsed.trades) {
       DedupResult dedup_result = dedup.classify(trade);
       if (dedup_result == DedupResult::Duplicate) {
         ++duplicates;
@@ -452,7 +622,7 @@ int replay(const std::filesystem::path& input, const std::filesystem::path& outp
       }
       if (dedup_result == DedupResult::OutOfOrder) {
         ++out_of_order;
-        continue;
+        trade.out_of_order = true;
       }
       ++valid;
       const Factors factors = engine.update(trade);
@@ -465,22 +635,28 @@ int replay(const std::filesystem::path& input, const std::filesystem::path& outp
                  << json::escape(trade.qty_text) << "\",\"price\":" << format_double(trade.price)
                  << ",\"qty\":" << format_double(trade.qty) << ",\"exchange_ts_ns\":"
                  << trade.exchange_ts_ns << ",\"frame_seq\":" << trade.frame_seq
-                 << ",\"connection_generation\":" << trade.connection_generation << '}';
+                 << ",\"connection_generation\":" << trade.connection_generation
+                 << ",\"received_ns\":" << trade.received_steady_ns
+                 << ",\"out_of_order\":" << (trade.out_of_order ? "true" : "false") << '}';
       std::ostringstream factor_line;
       factor_line << "{\"stage\":\"factor_snapshot\",\"symbol\":\""
                   << json::escape(factors.symbol) << "\",\"trade_id\":\""
-                  << json::escape(factors.trade_id)
-                  << "\",\"trade_imbalance\":" << format_double(factors.imbalance)
+                  << json::escape(factors.trade_id) << "\",\"trade_imbalance\":"
+                  << format_double(factors.imbalance)
                   << ",\"return_n\":" << format_double(factors.return_n)
                   << ",\"trade_rate_10s\":" << format_double(factors.rate_10s)
                   << ",\"avg_trade_size\":" << format_double(factors.average_size)
-                  << ",\"window_trades\":" << factors.window_trades << '}';
+                  << ",\"window_trades\":" << factors.window_trades
+                  << ",\"received_ns\":" << factors.received_ns
+                  << ",\"out_of_order\":" << (factors.out_of_order ? "true" : "false")
+                  << '}';
       std::ostringstream signal_line;
       signal_line << "{\"symbol\":\"" << json::escape(signal.symbol) << "\",\"trade_id\":\""
                   << json::escape(signal.trade_id) << "\",\"action\":\"" << signal.action
                   << "\",\"reason\":\"" << signal.reason
                   << "\",\"score\":" << format_double(signal.score)
                   << ",\"price\":" << format_double(signal.price)
+                  << ",\"out_of_order\":" << (signal.out_of_order ? "true" : "false")
                   << ",\"execution\":\"DISABLED_DEMO_ONLY\"}";
       if (!events.append(event_line.str()) || !factors_out.append(factor_line.str()) ||
           !signals_out.append(signal_line.str())) {
@@ -494,21 +670,40 @@ int replay(const std::filesystem::path& input, const std::filesystem::path& outp
     std::cerr << "replay finalization failed\n";
     return 2;
   }
-  std::string input_sha;
-  std::string hash_error;
-  sha256_file(input, input_sha, hash_error);
+
+  std::string result;
+  int exit_code = 2;
+  if (valid == 0) {
+    result = "FAIL";
+    first_error = "no valid trades replayed";
+  } else if (malformed > 0) {
+    result = "FAIL";
+    first_error = "malformed trade payloads in raw input";
+  } else if (duplicates > 0 || out_of_order > 0) {
+    result = "PARTIAL";
+    exit_code = 3;
+  } else {
+    result = "PASS";
+    exit_code = 0;
+  }
   std::ostringstream summary;
-  summary << "{\"result\":\"PASS\",\"replay\":true,\"input\":\"" << json::escape(input.string())
-          << "\",\"input_sha256\":\"" << input_sha << "\",\"records_read\":" << line_no
-          << ",\"trades_processed\":" << valid << ",\"duplicates\":" << duplicates
-          << ",\"out_of_order\":" << out_of_order << ",\"malformed_frames\":" << malformed
+  summary << "{\"result\":\"" << result << "\",\"replay\":true,\"input\":\""
+          << json::escape(input.string()) << "\",\"input_sha256\":\"" << input_sha
+          << "\",\"records_read\":" << records_read
+          << ",\"frames_validated\":" << frames_validated
+          << ",\"integrity_errors\":0"
+          << ",\"trades_processed\":" << valid
+          << ",\"duplicates\":" << duplicates
+          << ",\"out_of_order\":" << out_of_order
+          << ",\"malformed_frames\":" << malformed
+          << ",\"exit_code\":" << exit_code
           << ",\"execution_enabled\":false}\n";
   if (!atomic_write_file(output / "replay_summary.json", summary.str(), error)) {
     std::cerr << error << '\n';
     return 2;
   }
   std::cout << summary.str();
-  return 0;
+  return exit_code;
 }
 
 int synthetic(std::size_t count) {

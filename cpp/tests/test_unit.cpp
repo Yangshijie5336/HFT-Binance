@@ -2,7 +2,9 @@
 
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <string>
+#include <vector>
 
 #include "marketpipe/json.hpp"
 #include "marketpipe/runtime.hpp"
@@ -36,6 +38,43 @@ Trade make_trade(std::uint64_t id, const std::string& side, double price, double
   trade.exchange_time = utc_iso_from_ns(trade.exchange_ts_ns);
   trade.received_steady_ns = received_ns;
   return trade;
+}
+
+std::string replay_trade_payload(std::uint64_t id) {
+  const long long timestamp = 1700000000000LL + static_cast<long long>(id) * 1000LL;
+  std::ostringstream payload;
+  payload << "{\"e\":\"trade\",\"E\":" << timestamp << ",\"s\":\"BTCUSDT\",\"t\":" << id
+          << ",\"p\":\"100.0\",\"q\":\"1.0\",\"T\":" << timestamp << ",\"m\":false}";
+  return payload.str();
+}
+
+std::string replay_raw_record(const std::string& payload, std::uint64_t seq,
+                              std::int64_t received_ns,
+                              const std::string& hash_override = "") {
+  const std::string hash = hash_override.empty() ? sha256_hex(payload) : hash_override;
+  std::ostringstream record;
+  record << "{\"record_type\":\"raw_websocket_frame\",\"run_id\":\"unit-replay\","
+            "\"connection_id\":\"unit-replay-conn-1\",\"connection_generation\":1,"
+            "\"frame_seq\":"
+         << seq << ",\"received_at_utc\":\"2026-10-22T00:00:00.000000000Z\","
+         << "\"received_monotonic_ns\":" << received_ns
+         << ",\"received_utc\":\"2026-10-22T00:00:00.000000000Z\",\"payload\":\""
+         << json::escape(payload) << "\",\"payload_sha256\":\"" << hash
+         << "\",\"payload_bytes\":" << payload.size() << '}';
+  return record.str();
+}
+
+std::vector<json::Value> read_json_lines(const std::filesystem::path& path) {
+  std::ifstream input(path);
+  std::vector<json::Value> values;
+  std::string line;
+  while (std::getline(input, line)) {
+    json::Value value;
+    json::ParseError error;
+    MP_REQUIRE(json::parse(line, value, error));
+    values.push_back(std::move(value));
+  }
+  return values;
 }
 
 }  // namespace
@@ -316,6 +355,131 @@ MP_TEST(logger_writes_valid_structured_json) {
   const json::Value* text = fields->find("text");
   MP_REQUIRE(text != nullptr);
   MP_CHECK_EQ(text->text, "ok");
+  std::filesystem::remove_all(dir);
+}
+
+MP_TEST(replay_uses_saved_receive_clock_and_metadata) {
+  const auto dir = temp_directory("replay-clock");
+  const auto input = dir / "raw.jsonl";
+  const auto output = dir / "out";
+  {
+    std::ofstream raw(input, std::ios::binary);
+    raw << replay_raw_record(replay_trade_payload(1), 1, 1000000000LL) << '\n';
+    raw << replay_raw_record(replay_trade_payload(2), 2, 32000000000LL) << '\n';
+  }
+  MP_CHECK_EQ(replay(input, output), 0);
+  const auto factors = read_json_lines(output / "factors.jsonl");
+  MP_CHECK_EQ(factors.size(), 2u);
+  MP_CHECK_EQ(factors[0].find("received_ns")->text, "1000000000");
+  MP_CHECK_EQ(factors[1].find("received_ns")->text, "32000000000");
+  MP_CHECK_EQ(factors[1].find("window_trades")->text, "1");
+  MP_CHECK_EQ(factors[1].find("trade_rate_10s")->text, "0.10000000000000001");
+  const auto events = read_json_lines(output / "normalized_events.jsonl");
+  MP_CHECK_EQ(events.size(), 2u);
+  MP_CHECK_EQ(events[1].find("frame_seq")->text, "2");
+  MP_CHECK_EQ(events[1].find("received_ns")->text, "32000000000");
+  const auto summary = read_json_lines(output / "replay_summary.json");
+  MP_REQUIRE(summary.size() == 1);
+  MP_CHECK_EQ(summary[0].find("result")->text, "PASS");
+  MP_CHECK_EQ(summary[0].find("frames_validated")->text, "2");
+  std::filesystem::remove_all(dir);
+}
+
+MP_TEST(replay_rejects_tampered_hash_and_broken_input) {
+  const auto dir = temp_directory("replay-corrupt");
+  const auto tampered = dir / "tampered.jsonl";
+  const auto tampered_out = dir / "tampered-out";
+  {
+    std::ofstream raw(tampered, std::ios::binary);
+    raw << replay_raw_record(replay_trade_payload(1), 1, 1000000000LL) << '\n';
+    raw << replay_raw_record(replay_trade_payload(2), 2, 2000000000LL, "deadbeef") << '\n';
+  }
+  MP_CHECK_EQ(replay(tampered, tampered_out), 2);
+  {
+    const auto summary = read_json_lines(tampered_out / "replay_summary.json");
+    MP_REQUIRE(summary.size() == 1);
+    MP_CHECK_EQ(summary[0].find("result")->text, "FAIL");
+    MP_CHECK_EQ(summary[0].find("integrity_errors")->text, "1");
+    MP_CHECK_EQ(summary[0].find("frames_validated")->text, "1");
+    MP_CHECK_EQ(summary[0].find("trades_processed")->text, "0");
+  }
+
+  const auto broken = dir / "broken.jsonl";
+  const auto broken_out = dir / "broken-out";
+  {
+    std::ofstream raw(broken, std::ios::binary);
+    raw << "{broken\n";
+  }
+  MP_CHECK_EQ(replay(broken, broken_out), 2);
+  {
+    const auto summary = read_json_lines(broken_out / "replay_summary.json");
+    MP_REQUIRE(summary.size() == 1);
+    MP_CHECK_EQ(summary[0].find("result")->text, "FAIL");
+    MP_CHECK_EQ(summary[0].find("integrity_errors")->text, "1");
+    MP_CHECK_EQ(summary[0].find("trades_processed")->text, "0");
+  }
+
+  const auto empty = dir / "no-trades.jsonl";
+  const auto empty_out = dir / "no-trades-out";
+  {
+    const std::string payload = R"({"result":null,"id":1})";
+    std::ofstream raw(empty, std::ios::binary);
+    raw << replay_raw_record(payload, 1, 1000000000LL) << '\n';
+  }
+  MP_CHECK_EQ(replay(empty, empty_out), 2);
+  {
+    const auto summary = read_json_lines(empty_out / "replay_summary.json");
+    MP_REQUIRE(summary.size() == 1);
+    MP_CHECK_EQ(summary[0].find("result")->text, "FAIL");
+    MP_CHECK_EQ(summary[0].find("trades_processed")->text, "0");
+  }
+
+  const auto backwards = dir / "backwards-time.jsonl";
+  const auto backwards_out = dir / "backwards-time-out";
+  {
+    std::ofstream raw(backwards, std::ios::binary);
+    raw << replay_raw_record(replay_trade_payload(1), 1, 2000000000LL) << '\n';
+    raw << replay_raw_record(replay_trade_payload(2), 2, 1000000000LL) << '\n';
+  }
+  MP_CHECK_EQ(replay(backwards, backwards_out), 2);
+  {
+    const auto summary = read_json_lines(backwards_out / "replay_summary.json");
+    MP_REQUIRE(summary.size() == 1);
+    MP_CHECK_EQ(summary[0].find("result")->text, "FAIL");
+    MP_CHECK_EQ(summary[0].find("integrity_errors")->text, "1");
+    MP_CHECK_EQ(summary[0].find("first_error")->text.find("received_monotonic_ns went backwards") !=
+                     std::string::npos,
+                 true);
+  }
+  std::filesystem::remove_all(dir);
+}
+
+MP_TEST(replay_processes_and_marks_out_of_order_trades) {
+  const auto dir = temp_directory("replay-ooo");
+  const auto input = dir / "raw.jsonl";
+  const auto output = dir / "out";
+  {
+    std::ofstream raw(input, std::ios::binary);
+    raw << replay_raw_record(replay_trade_payload(1), 1, 1000000000LL) << '\n';
+    raw << replay_raw_record(replay_trade_payload(3), 2, 2000000000LL) << '\n';
+    raw << replay_raw_record(replay_trade_payload(2), 3, 3000000000LL) << '\n';
+  }
+  MP_CHECK_EQ(replay(input, output), 3);
+  const auto summary = read_json_lines(output / "replay_summary.json");
+  MP_REQUIRE(summary.size() == 1);
+  MP_CHECK_EQ(summary[0].find("result")->text, "PARTIAL");
+  MP_CHECK_EQ(summary[0].find("trades_processed")->text, "3");
+  MP_CHECK_EQ(summary[0].find("out_of_order")->text, "1");
+  const auto events = read_json_lines(output / "normalized_events.jsonl");
+  MP_CHECK_EQ(events.size(), 3u);
+  MP_CHECK_EQ(events[2].find("trade_id")->text, "2");
+  MP_REQUIRE(events[2].find("out_of_order") != nullptr);
+  MP_CHECK(events[2].find("out_of_order")->is_bool());
+  MP_CHECK(events[2].find("out_of_order")->boolean);
+  const auto signals = read_json_lines(output / "signals.jsonl");
+  MP_CHECK_EQ(signals.size(), 3u);
+  MP_REQUIRE(signals[2].find("out_of_order") != nullptr);
+  MP_CHECK(signals[2].find("out_of_order")->boolean);
   std::filesystem::remove_all(dir);
 }
 

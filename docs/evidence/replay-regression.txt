@@ -1,0 +1,20 @@
+回放修复回归证据
+
+1) 有效时间戳：两笔成交 received_monotonic_ns = 1,000,000,000 / 32,000,000,000（间隔 31 秒）
+   replay 退出码: 0，result: PASS
+   第二笔: window_trades=1, trade_rate_10s=0.1
+   原始输出见 data/review-evidence/valid-replay/
+
+2) payload 哈希错误：data/review-evidence/raw.jsonl
+   replay 退出码: 2，result: FAIL，integrity_errors: 2
+   首个错误: line 1: payload SHA-256 mismatch
+   输出目录: data/review-evidence/replay-fixed/
+
+3) 非法 JSON：data/review-evidence/corrupt.jsonl
+   replay 退出码: 2，result: FAIL，integrity_errors: 1
+   首个错误: line 1: invalid raw JSON object
+   输出目录: data/review-evidence/corrupt-fixed/
+
+4) 接收时间倒退：两条合法帧 received_monotonic_ns = 2,000,000,000 后接 1,000,000,000
+   replay 退出码: 2，result: FAIL，integrity_errors: 1
+   首个错误: line 2: received_monotonic_ns went backwards

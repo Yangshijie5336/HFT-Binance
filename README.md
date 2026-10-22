@@ -8,14 +8,15 @@ Python 参考实现已经删除，仓库现在只保留 C++20 / CMake / Ninja �
 
 ## 最新验收结果
 
-最终 900 秒真实采样（`live900-BTCUSDT-20261022`）结果为 **PASS**：
+最终 900 秒真实采样（`live900-BTCUSDT-20261022-v2`）结果为 **PASS**：
 
-- 24,903 个原始帧全部落盘，24,903 笔成交全部处理；0 重连、0 断开、0 队列溢出、0 丢弃、0 持久化/处理错误。
+- 实际采样 **900.0715 秒**（严格达到目标；排空 0.0426 秒单独记录）。
+- 32,499 个原始帧全部落盘，32,499 笔成交全部处理；0 重连、0 断开、0 队列溢出、0 丢弃、0 持久化/处理错误。
 - 原始文件 SHA-256：
-  `5836675014897976d47654e8d0fde5f765f7ff129d0ecba9c413d5c5a82919b8`，已由 `verification.json` 独立复核。
+  `7495d8d0fdc92840ee0ccacb1646e9a4a0467ede175781400cee820be66a5301`，已由 `verification.json` 独立复核。
 - 全部 11 项质量门禁通过；详见 [验收报告](docs/acceptance_report.md) 与 [证据目录](docs/evidence/)。
 
-大型原始/派生文件保留在被 Git 忽略的 `data/runs/` 或 CI 产物 中，不提交到源码仓库。
+大型原始/派生文件保留在被 Git 忽略的 `data/runs/` 或 CI 产物中，不提交到源码仓库。
 
 ## 架构
 
@@ -29,7 +30,7 @@ Binance Spot WebSocket（TLS，Beast/Asio/OpenSSL）
         └────────────────────►  有界处理队列
                                        │
                                        ▼
-                         解析 → 校验 → 去重 / 乱序检测
+                         解析 → 校验 → 去重 / 乱序标记（保留处理）
                                        │
                                        ▼
                           滚动因子 → 确定性策略
@@ -104,7 +105,9 @@ marketpipe synthetic --events 100000        # 旧版仅因子基准
 | `--run-id ID` | 指定运行目录名 |
 | `--quiet` | 不把结构化日志镜像到 stderr |
 
-退出码：`0` 为 PASS/PARTIAL，`2` 为 FAIL/BLOCKED，`130` 为 SIGINT/SIGTERM 中断。失败运行仍会写入 `system.log`、`summary.json` 和校验报告。
+退出码：`capture` 的 `0` 为 PASS/PARTIAL，`2` 为 FAIL/BLOCKED，`130` 为 SIGINT/SIGTERM 中断；`replay` 的 `0` 为 PASS，`2` 为完整性/业务失败，`3` 为 PARTIAL。失败运行仍会写入 `system.log`、`summary.json` 和校验报告。
+
+PASS 要求实际采样时长严格达到目标值，且排空/最终确定耗时单独记录、不能用于补足时长。
 
 ## 运行目录
 
@@ -128,7 +131,9 @@ marketpipe synthetic --events 100000        # 旧版仅因子基准
 CTest 覆盖：
 
 - JSON/解析边界与异常 Binance 帧
-- 重复/乱序成交与有界去重
+- 重复/乱序成交与有界去重（乱序成交保留并标记，不丢弃）
+- replay 使用原始接收时间、逐帧 SHA-256 校验与损坏输入失败
+- 严格采样时长与排空时间分离
 - 有界队列溢出与停止时排空
 - 磁盘满、最终 fsync 失败、打开失败
 - 原始帧持久化与 SHA-256 校验

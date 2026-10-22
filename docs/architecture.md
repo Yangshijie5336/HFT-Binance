@@ -47,8 +47,9 @@ writer 在关闭处理队列前先排空 raw 队列，因此优雅停止不会�
 共享可变状态仅限于：
 
 - `std::atomic<bool> fatal`（writer/processor → 网络）
+- 原子停止标志 `finished`（主线程 → 停止监视线程）
+- 原子队列溢出标志/计数、丢弃计数和持久化错误标志（网络、writer、processor → 主线程）
 - `CaptureSummary` 中按组件划分的字段：每个字段只由一个线程写，join 后读取
-- 停止路径中的 `std::atomic` 标志
 - logger 的互斥锁（所有线程）
 - 有界队列的互斥锁/条件变量
 
@@ -70,7 +71,8 @@ writer 在关闭处理队列前先排空 raw 队列，因此优雅停止不会�
 
 - 每次连接尝试获得单调递增的 `connection_generation`。
 - 每个原始帧记录其连接代次和连接 id。
-- 去重是跨重连全局的：重连后重复出现的成交会被计为 duplicate。
+- 去重是跨重连全局的：重连后重复出现的成交会被计为 duplicate 并跳过。
+- 未重复但成交 ID 小于当前最大 ID 的成交标记为 `out_of_order=true`，**仍进入**因子、信号与派生输出；因子按到达（接收）顺序处理，而不是丢弃或按交易所时间重排。该规则保证实时与 replay 一致。
 - 重连时采集器记录 `GapWindow`，包含近似缺口时长、最后帧时间与重连 UTC 时间，并明确记录重连不能证明交易所行情无缺失。
 - 指数退避从 `--reconnect-initial`（默认 1 秒）开始，每次连续失败翻倍，上限 `--reconnect-max`（默认 15 秒）。
 - 连续 10 次连接失败会带诊断中止运行（可配置）。
@@ -83,6 +85,13 @@ writer 在关闭处理队列前先排空 raw 队列，因此优雅停止不会�
 - 信任来源依次为：`--ca-file`、`MARKETPIPE_CA_FILE`、`SSL_CERT_FILE`、`<cwd>/certs/cacert.pem`、可执行文件旁路径、Linux 系统 bundle、OpenSSL 默认路径；Windows Root 存储可访问时也会导入。
 - 明文 `ws://` 仅允许回环地址，且只用于本地集成测试服务。非回环明文在连接前即拒绝。
 - TLS 握手错误会带 OpenSSL 错误记录，并作为致命配置/信任失败终止运行，而不是无限重试。
+
+## 时长与排空
+
+- 采样起点是采集初始化完成、网络循环开始前的单调时钟时刻。
+- 采样终点是网络循环返回（停止接收/到达 deadline）时的单调时钟时刻，随后才关闭队列、join 工作线程、fsync 和生成汇总。
+- `duration_actual_seconds` 只包含采样区间；`drain_elapsed_seconds` 单独记录排空与最终确定耗时；`processing_elapsed_seconds` 是总墙钟耗时。
+- PASS 要求 `duration_actual_seconds >= duration_target_seconds`，不再使用 99% 容差；排空耗时不能补偿提前停止。
 
 ## 持久化与完整性
 
@@ -97,7 +106,7 @@ writer 在关闭处理队列前先排空 raw 队列，因此优雅停止不会�
 只有以下条件全部满足才是 `PASS`：
 
 1. 成功建立真实非回环 WebSocket 连接（`wss://` 通过 TLS 校验）；
-2. 实测时长 ≥ 目标时长的 99%；
+2. 实测采样时长 ≥ 目标时长（严格比较，不含排空时间）；
 3. 至少处理一个原始帧和一笔唯一成交；
 4. 原始记录数等于接收帧数；
 5. raw 文件 SHA-256 与增量 writer 摘要及 summary 一致；
@@ -105,6 +114,17 @@ writer 在关闭处理队列前先排空 raw 队列，因此优雅停止不会�
 7. 断开、异常帧、重复和乱序均为零。
 
 出现重连、异常帧、重复或乱序则为 `PARTIAL`。HTTP 451 为 `BLOCKED`。其余为 `FAIL`。
+
+## Replay 完整性
+
+`replay` 必须先验证完整 raw envelope：
+
+- 每行必须是合法 JSON 对象；
+- 必须包含 `payload`、`payload_sha256`、`frame_seq`、`connection_generation`、接收单调时间和 `received_utc`；
+- 逐帧重算 payload SHA-256，并校验可选 `payload_bytes`；
+- `frame_seq` 严格递增、连接代次不回退。
+
+任何完整性错误、零有效成交或 malformed payload 都返回非零退出码并写 `result=FAIL`，不会跳过坏记录后错误地输出 PASS。通过校验后，replay 使用原始 `received_monotonic_ns`、帧序号、代次和连接 id 驱动因子与策略，因此窗口和信号可复现。重复成交跳过，乱序成交保留并标记。
 
 ## 已知限制
 

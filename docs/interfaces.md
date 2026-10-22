@@ -41,7 +41,13 @@ marketpipe synthetic [--events N]
 
 ### `replay`
 
-读取 `raw_frames.jsonl`，提取每条 `payload`，按到达顺序运行同一套解析器/因子/策略。在 `--output-dir`（默认 `data/replays/<UTC 时间戳>_replay`）输出 `normalized_events.jsonl`、`factors.jsonl`、`signals.jsonl`、`replay_summary.json`。打开/写入/最终确定失败返回 `2`。
+读取采集器生成的 `raw_frames.jsonl`，先校验 envelope、逐帧 payload SHA-256、`payload_bytes`、`frame_seq` 递增和连接代次，再用原始 `received_monotonic_ns` 恢复因子时钟。在 `--output-dir`（默认 `data/replays/<UTC 时间戳>_replay`）输出 `normalized_events.jsonl`、`factors.jsonl`、`signals.jsonl`、`replay_summary.json`。
+
+- 完整性错误、非法 envelope、零有效成交或 malformed payload：`result=FAIL`，退出码 `2`，不输出通过结论。
+- 存在重复或乱序成交但输入完整：`result=PARTIAL`，退出码 `3`；乱序成交仍被处理并标记。
+- 干净输入：`result=PASS`，退出码 `0`。
+
+`replay_summary.json` 包含 `frames_validated`、`integrity_errors`、`trades_processed`、`duplicates`、`out_of_order`、`malformed_frames`、`exit_code`。
 
 ### `benchmark`
 
@@ -81,8 +87,8 @@ marketpipe synthetic [--events N]
 ```json
 {
   "record_type": "raw_websocket_frame",
-  "run_id": "live900-BTCUSDT-20261022",
-  "connection_id": "live900-BTCUSDT-20261022-conn-1-123456",
+  "run_id": "live900-BTCUSDT-20261022-v2",
+  "connection_id": "live900-BTCUSDT-20261022-v2-conn-1-123456",
   "connection_generation": 1,
   "frame_seq": 42,
   "received_at_utc": "2026-10-22T04:33:01.123456789Z",
@@ -119,6 +125,7 @@ marketpipe synthetic [--events N]
     "connection_generation": 1,
     "connection_id": "…",
     "event_key": "BTCUSDT:123456789",
+    "out_of_order": false,
     "source_type": "trade"
   },
   "processed_ns": 1234567890456,
@@ -126,7 +133,7 @@ marketpipe synthetic [--events N]
 }
 ```
 
-`side` 是 Binance `m` 推导的主动方：`m=true` → `sell`，否则 `buy`。重复和乱序成交只计数，不写入此流。
+`side` 是 Binance `m` 推导的主动方：`m=true` → `sell`，否则 `buy`。重复成交跳过；未重复的乱序成交保留，标记 `out_of_order=true`，并进入因子与信号链路。因子窗口按到达（接收）顺序推进，这是实时与 replay 的共同规则。
 
 ## 因子记录
 
@@ -144,6 +151,7 @@ marketpipe synthetic [--events N]
   "window_trades": 30,
   "exchange_ts_ns": 1761117181120000000,
   "received_ns": 1234567890123,
+  "out_of_order": false,
   "computed_ns": 1234567890500
 }
 ```
@@ -165,6 +173,7 @@ marketpipe synthetic [--events N]
   "reason": "positive_trade_imbalance_and_momentum",
   "score": 0.42,
   "price": 67000.12,
+  "out_of_order": false,
   "created_ns": 1234567890550,
   "execution": "DISABLED_DEMO_ONLY"
 }
@@ -187,7 +196,8 @@ marketpipe synthetic [--events N]
 | `result` | `PASS`、`PARTIAL`、`FAIL`、`BLOCKED` |
 | `failure` | null 或具体诊断 |
 | `started_utc` / `finished_utc` / `started_wall_ns` / `finished_wall_ns` | 墙钟时间 |
-| `duration_target_seconds` / `duration_actual_seconds` | 目标与实际时长 |
+| `duration_target_seconds` / `duration_actual_seconds` | 目标时长与实际采样时长（不含排空） |
+| `processing_elapsed_seconds` / `drain_elapsed_seconds` | 总处理墙钟时长 / 排空与最终确定时长 |
 | `frames_received` / `raw_frames_records` / `raw_frames_bytes` | 接收/落盘 |
 | `trade_events_seen` / `trades_processed` / `signals_emitted` | 处理链路计数 |
 | `duplicates` / `out_of_order` / `malformed_frames` | 校验计数 |
@@ -200,7 +210,7 @@ marketpipe synthetic [--events N]
 | `queue_wait_latency` / `receive_to_process_latency` / `receive_to_signal_latency` | 采样延迟分位 |
 | `cpu_percent_avg` / `rss_bytes_peak` | 进程资源采样 |
 | `activity_by_minute_utc` | 按交易所分钟统计的唯一成交 |
-| `quality_checks` | PASS/FALSE 门禁映射 |
+| `quality_checks` | PASS/FALSE 门禁映射；`duration_meets_target` 要求实际采样严格达到目标 |
 | `artifact_sha256` | 文件哈希 |
 | `execution_enabled` | 始终为 `false` |
 

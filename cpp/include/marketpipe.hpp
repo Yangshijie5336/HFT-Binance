@@ -61,6 +61,7 @@ struct Factors {
   double qty{};
   std::int64_t exchange_ts_ns{};
   std::int64_t received_ns{};
+  bool out_of_order{};
 };
 
 struct Signal {
@@ -71,6 +72,7 @@ struct Signal {
   std::string trade_id;
   double price{};
   std::int64_t created_steady_ns{};
+  bool out_of_order{};
 };
 
 // Context stamped onto a trade while it travels through the pipeline.
@@ -219,6 +221,7 @@ struct CaptureSummary {
   double duration_target_seconds{};
   double duration_actual_seconds{};
   double processing_elapsed_seconds{};
+  double drain_elapsed_seconds{};
 
   std::uint64_t frames_received{};
   std::uint64_t raw_frames_records{};

@@ -76,14 +76,29 @@ Beast keep-alive ping 由 `--idle-timeout-ms` 控制（默认 90 秒）。两个
 
 如果进程被强制杀死（SIGKILL / `docker kill`），只能保证已经 fsync 的数据。请使用 `docker stop`（SIGTERM）并给予 ≥ 30 秒宽限。
 
+## 采样时长不足 / 排空时间过长
+
+`duration_actual_seconds` 只计算网络接收阶段，到 `run_network()` 返回为止；`drain_elapsed_seconds` 记录此后的排空、join、fsync 和报告耗时。PASS 要求实际采样时长严格达到目标值，排空时间不能补足。看到 `duration_meets_target=false` 或 `failure="capture duration below target"` 时，应检查是否提前收到 SIGINT/SIGTERM、连接失败或队列溢出导致采集提前结束，而不是调低门槛。
+
+## 回放完整性失败 / 乱序成交
+
+`replay` 返回 `2` 且 `replay_summary.json` 为 `FAIL` 时，先看 `integrity_errors` 和 `first_error`：
+
+- `invalid raw JSON object`：原始 JSONL 损坏；
+- `payload SHA-256 mismatch`：payload 被修改或日志被拼接；
+- `payload_bytes mismatch`：帧长度元数据损坏；
+- `frame_seq is not strictly increasing` / `connection_generation went backwards`：记录顺序或代次被修改。
+
+不要编辑 raw 文件来“修复”回放；应重新采集或从可信备份恢复。合法输入但存在重复或乱序时，replay 返回 `3`/`PARTIAL`：重复成交跳过，未重复的乱序成交保留并标记 `out_of_order=true`，按到达（接收）顺序进入因子窗口；这与实时采集规则一致。
+
 ## 报告校验不匹配
 
 以下情况 `report` 返回 2：
 
-- `summary.json` 声称 PASS，但某个 产物哈希不同；
+- `summary.json` 声称 PASS，但某个产物哈希不同；
 - `raw_frames.jsonl` 有坏记录、非递增序号或 payload 哈希不匹配；
 - 记录数与 `frames_received`/`raw_frames_records` 不一致；
-- 必需产物 缺失。
+- 必需产物缺失。
 
 采集后不要编辑原始文件。校验归档运行时，原样复制目录并执行 `report --run-dir`。
 

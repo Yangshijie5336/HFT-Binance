@@ -179,6 +179,8 @@ std::string render_report(const json::Value& summary, const std::map<std::string
          << format_double(double_member(summary, "duration_actual_seconds")) << " 秒\n";
   report << "- **处理/排空时长：** "
          << format_double(double_member(summary, "processing_elapsed_seconds")) << " 秒\n";
+  report << "- **排空/最终确定时长：** "
+         << format_double(double_member(summary, "drain_elapsed_seconds")) << " 秒\n";
   report << "- **失败原因：** `" << string_member(summary, "failure", "无") << "`\n";
   report << "- **是否被信号停止：** "
          << (bool_member(summary, "stopped_by_signal") ? "是" : "否") << "\n\n";
@@ -269,8 +271,9 @@ std::string render_report(const json::Value& summary, const std::map<std::string
   report << "- raw 与派生文件批量 flush，并按 "
          << string_member(summary, "raw_fsync_policy", "配置的间隔") << " 及最终确定时 fsync；"
             "最终确定错误会如实上报，绝不忽略。\n";
-  report << "- `PASS` 要求真实 WebSocket 连接、至少达到请求时长的 99%、raw 帧已落盘、"
-            "SHA-256 一致、零队列溢出、零持久化/处理失败，且无断开、异常帧或重复成交。\n";
+  report << "- `PASS` 要求真实 WebSocket 连接、实际采样时长严格达到目标（排空时间不计入）、"
+            "raw 帧已落盘、SHA-256 一致、零队列溢出、零持久化/处理失败，且无断开、异常帧、"
+            "重复或乱序成交。\n";
   report << "- 合成基准永远不能作为实时网络吞吐证据。策略只输出标签，执行禁用。\n";
   return report.str();
 }

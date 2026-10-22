@@ -25,8 +25,8 @@ ctest --test-dir build --output-on-failure
 预期 CTest 套件：
 
 - `marketpipe_help`
-- `marketpipe_unit`（18 个用例）
-- `marketpipe_integration`（14 个本地回环 WebSocket 场景）
+- `marketpipe_unit`（21 个用例）
+- `marketpipe_integration`（15 个本地回环 WebSocket 场景）
 - `marketpipe_benchmark_100k`（解析 + 处理链路 + 持久化）
 
 CTest 不访问 Binance。
@@ -75,12 +75,14 @@ capture result=PASS run_dir=data/smoke/20261022T...Z_BTCUSDT frames=40 processed
 
 有效验收运行要求：
 
-- 实际时长 ≥ 891 秒；
+- **实际采样时长 ≥ 900 秒**（严格比较；`duration_actual_seconds` 不含排空时间）；
 - 至少一个原始帧和一笔已处理成交；
 - `raw_frames_records == frames_received`；
 - `raw_integrity_verified == true`；
 - 无队列溢出、丢弃、持久化错误或处理失败；
 - 无断开、异常帧、重复或乱序成交。
+
+排空耗时记录在 `drain_elapsed_seconds`，不能用于补足采样时长。
 
 运行时避免竞争性的 CPU/磁盘负载。采集器写入结构化日志；连接开始/结束、退避和潜在缺口都在 `system.log`。
 
@@ -133,7 +135,7 @@ sha256sum data/runs/<run-id>/raw_frames.jsonl
   --output-dir data/replays/<name>
 ```
 
-Replay 从持久化原始帧重放标准化事件、因子和信号。Replay 期间 receive-to-process 延迟不可与实时采集比较。
+Replay 从持久化原始帧重放标准化事件、因子和信号。它先校验每帧 payload SHA-256、envelope 元数据和序号；损坏或被修改的日志返回 `2`/`FAIL`。有效的 replay 使用原始 `received_monotonic_ns`，因此 30 秒窗口、10 秒成交率和信号结果可复现。重复成交跳过，乱序成交保留并标记。Replay 期间 receive-to-process 延迟不可与实时采集比较。
 
 ## 8. Docker
 

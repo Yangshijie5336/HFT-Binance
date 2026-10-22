@@ -1,0 +1,8 @@
+run_id: live900-BTCUSDT-20261022-v2
+live_factors: 32499
+replay_factors: 32499
+factor_diffs: 0
+live_signals: 32499
+replay_signals: 32499
+signal_diffs: 0
+note: 比较字段为 trade_id/因子数值/window_trades/received_ns 与 trade_id/action/score/price；computed_ns 等本地时钟字段不参与比较

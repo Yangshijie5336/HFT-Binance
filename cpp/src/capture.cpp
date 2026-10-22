@@ -362,6 +362,9 @@ struct NetworkState {
   CaptureSummary& summary;
   CancelController& canceller;
   std::atomic<bool>& fatal;
+  std::atomic<bool>& queue_overflow_flag;
+  std::atomic<std::uint64_t>& queue_overflow_events;
+  std::atomic<std::uint64_t>& dropped_events;
   std::chrono::steady_clock::time_point deadline;
   asio::io_context* ioc{nullptr};
   std::uint64_t frame_seq{0};
@@ -546,14 +549,15 @@ asio::awaitable<SessionOutcome> websocket_session(
     state.last_frame_utc = received_utc;
     ++state.summary.frames_received;
     if (!state.raw_queue.try_push(std::move(frame))) {
-      state.summary.queue_overflow = true;
-      ++state.summary.queue_overflow_events;
-      ++state.summary.dropped_events;
+      state.queue_overflow_flag.store(true, std::memory_order_relaxed);
+      state.queue_overflow_events.fetch_add(1, std::memory_order_relaxed);
+      const auto dropped =
+          state.dropped_events.fetch_add(1, std::memory_order_relaxed) + 1;
       state.fatal.store(true, std::memory_order_relaxed);
       state.logger.error("raw_queue_overflow",
                          fields({f_uint("generation", generation),
                                  f_uint("capacity", state.raw_queue.capacity()),
-                                 f_uint("dropped_frames", state.summary.dropped_events)}));
+                                 f_uint("dropped_frames", dropped)}));
       SessionOutcome outcome;
       outcome.connected = true;
       outcome.end = SessionEnd::Fatal;
@@ -764,9 +768,9 @@ void run_network(NetworkState& state) {
       return;
     }
   }
-  bool finished = false;
+  std::atomic<bool> finished{false};
   std::thread stopper([&] {
-    while (!finished) {
+    while (!finished.load(std::memory_order_acquire)) {
       if (stop_requested() || state.fatal.load(std::memory_order_relaxed) ||
           deadline_reached(state)) {
         state.canceller.cancel();
@@ -778,7 +782,7 @@ void run_network(NetworkState& state) {
                  network_loop(state, ssl_context ? &*ssl_context : nullptr),
                  asio::detached);
   ioc.run();
-  finished = true;
+  finished.store(true, std::memory_order_release);
   stopper.join();
 }
 
@@ -811,6 +815,8 @@ std::string summary_json(const CaptureSummary& summary) {
        << ",\n";
   json << "  \"processing_elapsed_seconds\":"
        << format_double(summary.processing_elapsed_seconds) << ",\n";
+  json << "  \"drain_elapsed_seconds\":"
+       << format_double(summary.drain_elapsed_seconds) << ",\n";
   json << "  \"frames_received\":" << summary.frames_received << ",\n";
   json << "  \"raw_frames_records\":" << summary.raw_frames_records << ",\n";
   json << "  \"raw_frames_bytes\":" << summary.raw_frames_bytes << ",\n";
@@ -1031,7 +1037,7 @@ int write_failure_summary(const std::filesystem::path& run_dir, const CaptureCon
   summary.queue_capacity = config.queue_capacity;
   summary.ring_capacity = config.ring_capacity;
   summary.persistence_error = true;
-  summary.quality_checks["duration_at_least_99_percent"] = false;
+  summary.quality_checks["duration_meets_target"] = false;
   summary.quality_checks["at_least_one_trade_processed"] = false;
   std::string error;
   atomic_write_file(run_dir / "summary.json", summary_json(summary), error);
@@ -1150,7 +1156,10 @@ int run_capture(const CaptureConfig& config, CaptureSummary& summary) {
   BoundedQueue<RawFrame> raw_queue(config.queue_capacity);
   BoundedQueue<ProcessItem> process_queue(config.queue_capacity);
   std::atomic<bool> fatal{false};
-  std::atomic<bool> processing_done{false};
+  std::atomic<bool> queue_overflow_flag{false};
+  std::atomic<std::uint64_t> queue_overflow_events{0};
+  std::atomic<std::uint64_t> dropped_events{0};
+  std::atomic<bool> persistence_error_flag{false};
   summary.raw_fsync_policy =
       "buffered_batch_flush_fsync_every_" + std::to_string(config.fsync_every) + "_records_plus_final";
   summary.derived_fsync_policy = summary.raw_fsync_policy;
@@ -1164,19 +1173,19 @@ int run_capture(const CaptureConfig& config, CaptureSummary& summary) {
       auto last_flush = std::chrono::steady_clock::now();
       while (raw_queue.pop(frame)) {
         if (!raw_writer.append(raw_line(frame, run_id))) {
-          summary.persistence_error = true;
+          persistence_error_flag.store(true, std::memory_order_relaxed);
           fatal.store(true, std::memory_order_relaxed);
           logger.error("raw_write_failed",
                        fields({f_string("error", raw_writer.error()), f_uint("frame_seq", frame.seq)}));
         }
         if (!process_queue.try_push(ProcessItem{std::move(frame), steady_ns()})) {
-          summary.queue_overflow = true;
-          ++summary.queue_overflow_events;
-          ++summary.dropped_events;
+          queue_overflow_flag.store(true, std::memory_order_relaxed);
+          queue_overflow_events.fetch_add(1, std::memory_order_relaxed);
+          const auto dropped = dropped_events.fetch_add(1, std::memory_order_relaxed) + 1;
           fatal.store(true, std::memory_order_relaxed);
           logger.error("process_queue_overflow",
                        fields({f_uint("capacity", process_queue.capacity()),
-                               f_uint("dropped_events", summary.dropped_events)}));
+                               f_uint("dropped_events", dropped)}));
         }
         const auto now = std::chrono::steady_clock::now();
         if (now - last_flush >= 250ms) {
@@ -1188,7 +1197,7 @@ int run_capture(const CaptureConfig& config, CaptureSummary& summary) {
       // The writer owns final synchronization and the first integrity check:
       // compare the incremental digest with a fresh read of the closed file.
       if (!raw_writer.finalize()) {
-        summary.persistence_error = true;
+        persistence_error_flag.store(true, std::memory_order_relaxed);
         fatal.store(true, std::memory_order_relaxed);
         logger.error("raw_finalize_failed_in_writer",
                      fields({f_string("error", raw_writer.error())}));
@@ -1196,10 +1205,10 @@ int run_capture(const CaptureConfig& config, CaptureSummary& summary) {
         std::string file_hash;
         std::string hash_error;
         if (!sha256_file(run_dir / "raw_frames.jsonl", file_hash, hash_error)) {
-          summary.persistence_error = true;
+          persistence_error_flag.store(true, std::memory_order_relaxed);
           logger.error("raw_hash_readback_failed", fields({f_string("error", hash_error)}));
         } else if (file_hash != raw_writer.file_sha256()) {
-          summary.persistence_error = true;
+          persistence_error_flag.store(true, std::memory_order_relaxed);
           summary.raw_integrity_verified = false;
           logger.error("raw_hash_readback_mismatch",
                        fields({f_string("file", file_hash),
@@ -1207,7 +1216,7 @@ int run_capture(const CaptureConfig& config, CaptureSummary& summary) {
         }
       }
     } catch (const std::exception& error) {
-      summary.persistence_error = true;
+      persistence_error_flag.store(true, std::memory_order_relaxed);
       fatal.store(true, std::memory_order_relaxed);
       logger.error("writer_thread_exception", fields({f_string("error", error.what())}));
     }
@@ -1274,9 +1283,10 @@ int run_capture(const CaptureConfig& config, CaptureSummary& summary) {
           }
           if (dedup_result == DedupResult::OutOfOrder) {
             ++summary.out_of_order;
-            continue;
+            trade.out_of_order = true;
+          } else {
+            trade.out_of_order = false;
           }
-          trade.out_of_order = false;
           ++summary.trades_processed;
           ring.push_back(trade);
           while (ring.size() > config.ring_capacity) ring.pop_front();
@@ -1310,8 +1320,9 @@ int run_capture(const CaptureConfig& config, CaptureSummary& summary) {
                      << ",\"frame_seq\":" << trade.frame_seq
                      << ",\"connection_generation\":" << trade.connection_generation
                      << ",\"connection_id\":\"" << json::escape(trade.connection_id)
-                     << "\",\"event_key\":\"" << json::escape(trade.event_key())
-                     << "\",\"source_type\":\"trade\"},\"processed_ns\":" << now
+                     << ",\"event_key\":\"" << json::escape(trade.event_key())
+                     << "\",\"out_of_order\":" << (trade.out_of_order ? "true" : "false")
+                     << ",\"source_type\":\"trade\"},\"processed_ns\":" << now
                      << ",\"ring_size\":" << ring.size() << '}';
 
           std::ostringstream factor_line;
@@ -1327,6 +1338,7 @@ int run_capture(const CaptureConfig& config, CaptureSummary& summary) {
                       << ",\"window_trades\":" << factors.window_trades
                       << ",\"exchange_ts_ns\":" << factors.exchange_ts_ns
                       << ",\"received_ns\":" << factors.received_ns
+                      << ",\"out_of_order\":" << (factors.out_of_order ? "true" : "false")
                       << ",\"computed_ns\":" << now << '}';
 
           std::ostringstream signal_line;
@@ -1335,12 +1347,13 @@ int run_capture(const CaptureConfig& config, CaptureSummary& summary) {
                       << "\",\"reason\":\"" << signal.reason
                       << "\",\"score\":" << format_double(signal.score)
                       << ",\"price\":" << format_double(signal.price)
+                      << ",\"out_of_order\":" << (signal.out_of_order ? "true" : "false")
                       << ",\"created_ns\":" << signal.created_steady_ns
                       << ",\"execution\":\"DISABLED_DEMO_ONLY\"}";
 
           if (!events_writer.append(event_line.str()) || !factors_writer.append(factor_line.str()) ||
               !signals_writer.append(signal_line.str())) {
-            summary.persistence_error = true;
+            persistence_error_flag.store(true, std::memory_order_relaxed);
             ++summary.processing_failures;
             fatal.store(true, std::memory_order_relaxed);
             logger.error("derived_write_failed",
@@ -1357,28 +1370,38 @@ int run_capture(const CaptureConfig& config, CaptureSummary& summary) {
       summary.receive_to_process_latency = process_latency.summary();
       summary.receive_to_signal_latency = signal_latency.summary();
     } catch (const std::exception& error) {
-      summary.persistence_error = true;
+      persistence_error_flag.store(true, std::memory_order_relaxed);
       ++summary.processing_failures;
       fatal.store(true, std::memory_order_relaxed);
       logger.error("processor_thread_exception", fields({f_string("error", error.what())}));
     }
-    processing_done.store(true, std::memory_order_relaxed);
   });
 
   CancelController canceller;
-  NetworkState state{config,      endpoint,       raw_queue, logger, summary,
-                     canceller,   fatal,          deadline,  nullptr};
+  NetworkState state{config,          endpoint,          raw_queue,
+                     logger,         summary,           canceller,
+                     fatal,          queue_overflow_flag, queue_overflow_events,
+                     dropped_events, deadline,           nullptr};
   run_network(state);
+
+  // Sampling ends when the network loop returns. Drain/finalization time is
+  // recorded separately and must never extend the measured sampling duration.
+  const auto capture_end = std::chrono::steady_clock::now();
+  const double capture_seconds =
+      std::chrono::duration<double>(capture_end - start_steady).count();
+  summary.duration_actual_seconds = capture_seconds;
+  summary.stopped_by_signal = stop_requested() && capture_seconds < config.duration_seconds;
 
   raw_queue.close();
   writer_thread.join();
   process_queue.close();
   processor_thread.join();
 
-  const double capture_seconds =
-      std::chrono::duration<double>(std::chrono::steady_clock::now() - start_steady).count();
-  summary.duration_actual_seconds = capture_seconds;
-  summary.stopped_by_signal = stop_requested() && capture_seconds < config.duration_seconds * 0.99;
+  const auto processing_end = std::chrono::steady_clock::now();
+  summary.processing_elapsed_seconds =
+      std::chrono::duration<double>(processing_end - start_steady).count();
+  summary.drain_elapsed_seconds =
+      std::chrono::duration<double>(processing_end - capture_end).count();
 
   if (!raw_writer.finalize()) {
     summary.persistence_error = true;
@@ -1406,11 +1429,15 @@ int run_capture(const CaptureConfig& config, CaptureSummary& summary) {
   }
 
   summary.queue_high_water = std::max(raw_queue.high_water(), process_queue.high_water());
-  summary.queue_overflow = summary.queue_overflow || raw_queue.overflowed() ||
-                           process_queue.overflowed();
+  summary.queue_overflow_events = queue_overflow_events.load(std::memory_order_relaxed);
+  summary.dropped_events = dropped_events.load(std::memory_order_relaxed);
+  summary.queue_overflow = queue_overflow_flag.load(std::memory_order_relaxed) ||
+                           raw_queue.overflowed() || process_queue.overflowed();
   if (summary.queue_overflow && summary.queue_overflow_events == 0) {
     summary.queue_overflow_events = 1;
   }
+  summary.persistence_error =
+      persistence_error_flag.load(std::memory_order_relaxed) || summary.persistence_error;
   summary.cpu_percent_avg = sampler.average_cpu_percent();
   summary.rss_bytes_peak = sampler.peak_rss_bytes();
   sampler.stop();
@@ -1431,7 +1458,7 @@ int run_capture(const CaptureConfig& config, CaptureSummary& summary) {
     summary.max_trades_per_second = std::max(summary.max_trades_per_second, count);
   }
 
-  const bool duration_ok = capture_seconds >= config.duration_seconds * 0.99;
+  const bool duration_ok = capture_seconds >= config.duration_seconds;
   const bool data_ok = summary.frames_received > 0 && summary.trades_processed > 0;
   const bool records_ok = summary.raw_frames_records == summary.frames_received;
   const bool no_overflow = !summary.queue_overflow && summary.dropped_events == 0;
@@ -1443,7 +1470,7 @@ int run_capture(const CaptureConfig& config, CaptureSummary& summary) {
   const bool no_reconnects = summary.reconnects == 0;
   const bool tls_ok = endpoint.tls ? state.tls_verified : is_loopback_host(endpoint.host);
 
-  summary.quality_checks["duration_at_least_99_percent"] = duration_ok;
+  summary.quality_checks["duration_meets_target"] = duration_ok;
   summary.quality_checks["at_least_one_trade_processed"] = data_ok;
   summary.quality_checks["raw_record_count_matches_frames"] = records_ok;
   summary.quality_checks["zero_queue_overflow"] = no_overflow;
@@ -1468,7 +1495,7 @@ int run_capture(const CaptureConfig& config, CaptureSummary& summary) {
              !no_processing_failures || !summary.raw_integrity_verified || !tls_ok) {
     summary.result = RunResult::Fail;
     if (summary.failure.empty()) {
-      if (!duration_ok) summary.failure = "capture duration below 99% of target";
+      if (!duration_ok) summary.failure = "capture duration below target";
       else if (!data_ok) summary.failure = "no trade data captured/processed";
       else if (!records_ok) summary.failure = "raw record count does not match frames received";
       else if (!no_overflow) summary.failure = "bounded queue overflow: sample invalid";
@@ -1486,8 +1513,6 @@ int run_capture(const CaptureConfig& config, CaptureSummary& summary) {
 
   summary.finished_wall_ns = wall_ns();
   summary.finished_utc = utc_iso_from_ns(summary.finished_wall_ns);
-  summary.processing_elapsed_seconds =
-      std::chrono::duration<double>(std::chrono::steady_clock::now() - start_steady).count();
 
   logger.info("capture_finished",
               fields({f_string("result", to_string(summary.result)),
@@ -1495,6 +1520,7 @@ int run_capture(const CaptureConfig& config, CaptureSummary& summary) {
                       f_uint("trades_processed", summary.trades_processed),
                       f_uint("signals_emitted", summary.signals_emitted),
                       f_double("duration_actual_seconds", summary.duration_actual_seconds),
+                      f_double("drain_elapsed_seconds", summary.drain_elapsed_seconds),
                       f_uint("reconnects", summary.reconnects),
                       f_uint("malformed_frames", summary.malformed_frames),
                       f_uint("duplicates", summary.duplicates),

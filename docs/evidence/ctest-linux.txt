@@ -1,10 +1,10 @@
-Start testing: Oct 22 13:15 CST
+Start testing: Oct 22 20:26 CST
 ----------------------------------------------------------
 1/4 Testing: marketpipe_help
 1/4 Test: marketpipe_help
 Command: "/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/marketpipe" "--help"
 Directory: /mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux
-"marketpipe_help" start time: Oct 22 13:15 CST
+"marketpipe_help" start time: Oct 22 20:26 CST
 Output:
 ----------------------------------------------------------
 marketpipe 0.3.0 (C++20)
@@ -25,7 +25,7 @@ Only public market data is used. Signals are labels; order execution is disabled
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"marketpipe_help" end time: Oct 22 13:15 CST
+"marketpipe_help" end time: Oct 22 20:26 CST
 "marketpipe_help" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -33,7 +33,7 @@ Test Passed.
 2/4 Test: marketpipe_unit
 Command: "/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/marketpipe_unit_tests"
 Directory: /mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux
-"marketpipe_unit" start time: Oct 22 13:15 CST
+"marketpipe_unit" start time: Oct 22 20:26 CST
 Output:
 ----------------------------------------------------------
 [PASS] unit.json_parses_and_preserves_number_text
@@ -53,13 +53,25 @@ Output:
 [PASS] unit.sha256_known_vector
 [PASS] unit.atomic_file_write_round_trip
 [PASS] unit.logger_writes_valid_structured_json
+{"result":"PASS","replay":true,"input":"/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/unit_replay-clock_1792671978628510714/raw.jsonl","input_sha256":"46ab1e8faf4d6c92266d57a056972667ba02033faf056250022dd47e9fbbff4e","records_read":2,"frames_validated":2,"integrity_errors":0,"trades_processed":2,"duplicates":0,"out_of_order":0,"malformed_frames":0,"exit_code":0,"execution_enabled":false}
+[PASS] unit.replay_uses_saved_receive_clock_and_metadata
+replay rejected corrupt raw input: line 2: payload SHA-256 mismatch
+{"result":"FAIL","replay":true,"input":"/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/unit_replay-corrupt_1792671978694276419/tampered.jsonl","input_sha256":"c5ee946343917562e2181f3c7a0be00256d7ab47b56720069759e0d0b50ca444","records_read":2,"frames_validated":1,"integrity_errors":1,"trades_processed":0,"duplicates":0,"out_of_order":0,"malformed_frames":0,"first_error":"line 2: payload SHA-256 mismatch","exit_code":2,"execution_enabled":false}
+replay rejected corrupt raw input: line 1: invalid raw JSON object
+{"result":"FAIL","replay":true,"input":"/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/unit_replay-corrupt_1792671978694276419/broken.jsonl","input_sha256":"8f9302f65614f26c0ac129b3a69b2617d858989920ca60be65da649dc4b34118","records_read":1,"frames_validated":0,"integrity_errors":1,"trades_processed":0,"duplicates":0,"out_of_order":0,"malformed_frames":0,"first_error":"line 1: invalid raw JSON object","exit_code":2,"execution_enabled":false}
+{"result":"FAIL","replay":true,"input":"/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/unit_replay-corrupt_1792671978694276419/no-trades.jsonl","input_sha256":"5f6101a816df05a7b992f9e6a81932c55ec695d7a32e5032c16c532c549f5286","records_read":1,"frames_validated":1,"integrity_errors":0,"trades_processed":0,"duplicates":0,"out_of_order":0,"malformed_frames":0,"exit_code":2,"execution_enabled":false}
+replay rejected corrupt raw input: line 2: received_monotonic_ns went backwards
+{"result":"FAIL","replay":true,"input":"/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/unit_replay-corrupt_1792671978694276419/backwards-time.jsonl","input_sha256":"f1bf3d94a6c6e943d848e4a6ddfe4b7bee19c039ff9ade0a47875a068e3a78bd","records_read":2,"frames_validated":1,"integrity_errors":1,"trades_processed":0,"duplicates":0,"out_of_order":0,"malformed_frames":0,"first_error":"line 2: received_monotonic_ns went backwards","exit_code":2,"execution_enabled":false}
+[PASS] unit.replay_rejects_tampered_hash_and_broken_input
+{"result":"PARTIAL","replay":true,"input":"/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/unit_replay-ooo_1792671978875015943/raw.jsonl","input_sha256":"bfd57ec216ff70eb11227d93ae6ce6286419115c8c290e7e0f9d825fbae49fc2","records_read":3,"frames_validated":3,"integrity_errors":0,"trades_processed":3,"duplicates":0,"out_of_order":1,"malformed_frames":0,"exit_code":3,"execution_enabled":false}
+[PASS] unit.replay_processes_and_marks_out_of_order_trades
 [PASS] unit.utc_formatting_is_iso_utc
-unit: 18/18 passed
+unit: 21/21 passed
 <end of output>
-Test time =   0.13 sec
+Test time =   0.42 sec
 ----------------------------------------------------------
 Test Passed.
-"marketpipe_unit" end time: Oct 22 13:15 CST
+"marketpipe_unit" end time: Oct 22 20:26 CST
 "marketpipe_unit" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -67,68 +79,71 @@ Test Passed.
 3/4 Test: marketpipe_integration
 Command: "/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/marketpipe_integration_tests"
 Directory: /mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux
-"marketpipe_integration" start time: Oct 22 13:15 CST
+"marketpipe_integration" start time: Oct 22 20:26 CST
 Output:
 ----------------------------------------------------------
-capture result=PASS run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_basic_1792646131014236384/basic frames=8 processed=8 signals=8
+capture result=PASS run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_basic_1792671978967379254/basic frames=8 processed=8 signals=8
 [PASS] integration.capture_end_to_end_basic_pass
-capture result=PARTIAL run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_reconnect_1792646132813722835/reconnect frames=5 processed=5 signals=5
+capture result=PARTIAL run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_reconnect_1792671980738783554/reconnect frames=5 processed=5 signals=5
 [PASS] integration.reconnect_isolates_generations_and_records_gap
-capture result=PARTIAL run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_dedup_1792646135818141779/dedup frames=5 processed=3 signals=3
+capture result=PARTIAL run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_dedup_1792671983153168912/dedup frames=5 processed=4 signals=4
 [PASS] integration.duplicate_and_out_of_order_trades_are_counted
-capture result=PARTIAL run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_malformed_1792646137456433356/malformed frames=5 processed=2 signals=2
+capture result=PARTIAL run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_malformed_1792671984778695459/malformed frames=5 processed=2 signals=2
 [PASS] integration.malformed_frames_do_not_stop_capture
 warning: post-run verification did not pass
-capture result=FAIL run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_overflow_1792646139073327070/overflow frames=4 processed=3 signals=3
+capture result=FAIL run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_overflow_1792671986400599578/overflow frames=3 processed=2 signals=2
 [PASS] integration.queue_overflow_invalidates_the_sample
 warning: post-run verification did not pass
-capture result=FAIL run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_sigint_1792646139409121505/sigint frames=100 processed=100 signals=100
+capture result=FAIL run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_sigint_1792671986600977277/sigint frames=100 processed=100 signals=100
 [PASS] integration.sigint_stops_drains_and_finalizes
 warning: post-run verification did not pass
-capture result=FAIL run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_sigterm_1792646140644628115/sigterm frames=200 processed=200 signals=200
+capture result=FAIL run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_drain_1792671987625173179/drain frames=200 processed=200 signals=200
+[PASS] integration.early_stop_is_not_rescued_by_drain_time
+warning: post-run verification did not pass
+capture result=FAIL run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_sigterm_1792671990562468320/sigterm frames=200 processed=200 signals=200
 [PASS] integration.sigterm_stops_drains_and_finalizes
 warning: post-run verification did not pass
-capture result=BLOCKED run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_http451_1792646142908795810/http451 frames=0 processed=0 signals=0
+capture result=BLOCKED run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_http451_1792671991386455841/http451 frames=0 processed=0 signals=0
 [PASS] integration.http_451_is_blocked_and_not_retried_forever
 warning: post-run verification did not pass
-capture result=FAIL run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_diskfull_1792646143141842121/diskfull frames=2 processed=2 signals=2
+capture result=FAIL run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_diskfull_1792671991598723565/diskfull frames=2 processed=2 signals=2
 [PASS] integration.raw_disk_full_marks_persistence_failure
 warning: post-run verification did not pass
-capture result=FAIL run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_finalsync_1792646143361614216/finalsync frames=10 processed=10 signals=10
+capture result=FAIL run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_finalsync_1792671991804489152/finalsync frames=10 processed=10 signals=10
 [PASS] integration.final_flush_failure_marks_failure
-capture result=PASS run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_tamper_1792646144791835653/tamper frames=6 processed=6 signals=6
+capture result=PASS run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_tamper_1792671993209303855/tamper frames=6 processed=6 signals=6
 [PASS] integration.report_detects_tampered_raw_file
-capture result=PASS run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_replay_1792646146196127786/capture frames=7 processed=7 signals=7
-{"result":"PASS","replay":true,"input":"/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_replay_1792646146196127786/capture/raw_frames.jsonl","input_sha256":"2655e3191c5f87496e8a15ee98b55af2f359697af5b80cadbb67b668558c25db","records_read":7,"trades_processed":7,"duplicates":0,"out_of_order":0,"malformed_frames":0,"execution_enabled":false}
+capture result=PASS run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_replay_1792671994562155678/capture frames=7 processed=7 signals=7
+{"result":"PASS","replay":true,"input":"/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_replay_1792671994562155678/capture/raw_frames.jsonl","input_sha256":"ab2e9cf10b69b7098335c30095b7444b200e631c990e04897297d7e71a361558","records_read":7,"frames_validated":7,"integrity_errors":0,"trades_processed":7,"duplicates":0,"out_of_order":0,"malformed_frames":0,"exit_code":0,"execution_enabled":false}
 [PASS] integration.replay_reproduces_normalized_pipeline
 refusing plaintext ws:// for non-loopback host; use wss://
 [PASS] integration.plaintext_websocket_is_rejected_for_non_loopback
 warning: post-run verification did not pass
-capture result=FAIL run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_refused_1792646147574738874/refused frames=0 processed=0 signals=0
+capture result=FAIL run_dir=/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/.marketpipe-test-tmp/integration_refused_1792671995999880285/refused frames=0 processed=0 signals=0
 [PASS] integration.connection_refused_returns_nonzero_with_diagnostics
-integration: 14/14 passed
+integration: 15/15 passed
 <end of output>
-Test time =  16.33 sec
+Test time =  17.36 sec
 ----------------------------------------------------------
 Test Passed.
-"marketpipe_integration" end time: Oct 22 13:15 CST
-"marketpipe_integration" time elapsed: 00:00:16
+"marketpipe_integration" end time: Oct 22 20:26 CST
+"marketpipe_integration" time elapsed: 00:00:17
 ----------------------------------------------------------
 
 4/4 Testing: marketpipe_benchmark_100k
 4/4 Test: marketpipe_benchmark_100k
 Command: "/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/marketpipe" "benchmark" "--events" "100000" "--mode" "all" "--output-dir" "/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/benchmark-data"
 Directory: /mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux
-"marketpipe_benchmark_100k" start time: Oct 22 13:15 CST
+"marketpipe_benchmark_100k" start time: Oct 22 20:26 CST
 Output:
 ----------------------------------------------------------
-{"benchmark_type":"SYNTHETIC_BENCHMARK","live_network":false,"interpretation":"not live network throughput","events_per_mode":100000,"modes":[{"benchmark_type":"SYNTHETIC_BENCHMARK","mode":"parse_only","live_network":false,"events":100000,"events_per_second":456765,"duration_seconds":0.21893093199999999,"p50_us":1.4039999999999999,"p95_us":2.234,"p99_us":2.976,"latency_samples":20000,"signals_emitted":0,"raw_frames_written":0,"raw_frames_sha256":"","output_file":"","cpu_percent":100.98848910577514,"rss_bytes":31141888,"dropped_events":0,"errors":0,"execution_enabled":false},{"benchmark_type":"SYNTHETIC_BENCHMARK","mode":"full_pipeline","live_network":false,"events":100000,"events_per_second":268609,"duration_seconds":0.37228856799999999,"p50_us":2.8780000000000001,"p95_us":5.508,"p99_us":9.4039999999999999,"latency_samples":20000,"signals_emitted":99991,"raw_frames_written":0,"raw_frames_sha256":"","output_file":"","cpu_percent":101.32267946848805,"rss_bytes":92643328,"dropped_events":0,"errors":0,"execution_enabled":false},{"benchmark_type":"SYNTHETIC_BENCHMARK","mode":"pipeline_plus_raw_persistence","live_network":false,"events":100000,"events_per_second":21863.8,"duration_seconds":4.5737610259999997,"p50_us":5.593,"p95_us":1956.6559999999999,"p99_us":4888.7550000000001,"latency_samples":20000,"signals_emitted":99991,"raw_frames_written":100000,"raw_frames_sha256":"cedc8613dd8a5e4b329773e9e74cfb5ae923bf9a2a519116d826edb5954c6e57","output_file":"/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/benchmark-data/benchmark_3_67565/raw_frames.jsonl","cpu_percent":23.437535711863969,"rss_bytes":103858176,"dropped_events":0,"errors":0,"execution_enabled":false}]}
+{"benchmark_type":"SYNTHETIC_BENCHMARK","live_network":false,"interpretation":"not live network throughput","events_per_mode":100000,"modes":[{"benchmark_type":"SYNTHETIC_BENCHMARK","mode":"parse_only","live_network":false,"events":100000,"events_per_second":444484,"duration_seconds":0.22497977599999999,"p50_us":1.48,"p95_us":1.679,"p99_us":3.0870000000000002,"latency_samples":20000,"signals_emitted":0,"raw_frames_written":0,"raw_frames_sha256":"","output_file":"","cpu_percent":95.798738156887254,"rss_bytes":31154176,"dropped_events":0,"errors":0,"execution_enabled":false},{"benchmark_type":"SYNTHETIC_BENCHMARK","mode":"full_pipeline","live_network":false,"events":100000,"events_per_second":262072,"duration_seconds":0.38157391499999999,"p50_us":2.9609999999999999,"p95_us":5.4429999999999996,"p99_us":9.6340000000000003,"latency_samples":20000,"signals_emitted":99991,"raw_frames_written":0,"raw_frames_sha256":"","output_file":"","cpu_percent":96.083488567751502,"rss_bytes":92655616,"dropped_events":0,"errors":0,"execution_enabled":false},{"benchmark_type":"SYNTHETIC_BENCHMARK","mode":"pipeline_plus_raw_persistence","live_network":false,"events":100000,"events_per_second":32281.8,"duration_seconds":3.09771989,"p50_us":5.3220000000000001,"p95_us":1760.742,"p99_us":2605.636,"latency_samples":20000,"signals_emitted":99991,"raw_frames_written":100000,"raw_frames_sha256":"ed58693b7e013cd5ac9186819a363ba550ade25af4872affe6082eed917847bc","output_file":"/mnt/c/Users/YSJ/Desktop/杭州一诺资产/marketpipe-hft-demo/build-linux/benchmark-data/benchmark_3_8305/raw_frames.jsonl","cpu_percent":30.675960681028528,"rss_bytes":103198720,"dropped_events":0,"errors":0,"execution_enabled":false}]}
 <end of output>
-Test time =   5.41 sec
+Test time =   3.95 sec
 ----------------------------------------------------------
 Test Passed.
-"marketpipe_benchmark_100k" end time: Oct 22 13:15 CST
-"marketpipe_benchmark_100k" time elapsed: 00:00:05
+"marketpipe_benchmark_100k" end time: Oct 22 20:26 CST
+"marketpipe_benchmark_100k" time elapsed: 00:00:03
 ----------------------------------------------------------
 
-End testing: Oct 22 13:15 CST
+End testing: Oct 22 20:26 CST

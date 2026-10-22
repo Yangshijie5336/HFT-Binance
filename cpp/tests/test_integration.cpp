@@ -99,6 +99,10 @@ MP_TEST(capture_end_to_end_basic_pass) {
   MP_CHECK(summary.connection_generations == 1);
   MP_CHECK(summary.receive_to_process_latency.samples > 0);
   MP_CHECK(summary.queue_wait_latency.samples > 0);
+  MP_CHECK(summary.duration_actual_seconds >= 1.5);
+  MP_CHECK(summary.processing_elapsed_seconds >= summary.duration_actual_seconds);
+  MP_CHECK(summary.drain_elapsed_seconds >= 0.0);
+  MP_CHECK(summary.quality_checks["duration_meets_target"]);
 
   const auto run_dir = std::filesystem::path(summary.run_dir);
   MP_CHECK_EQ(line_count(run_dir / "raw_frames.jsonl"), 8u);
@@ -164,10 +168,17 @@ MP_TEST(duplicate_and_out_of_order_trades_are_counted) {
   MP_CHECK_EQ(exit_code, 0);
   MP_CHECK(summary.result == RunResult::Partial);
   MP_CHECK_EQ(summary.frames_received, 5u);
-  MP_CHECK_EQ(summary.trades_processed, 3u);
+  MP_CHECK_EQ(summary.trades_processed, 4u);
   MP_CHECK_EQ(summary.duplicates, 1u);
   MP_CHECK_EQ(summary.out_of_order, 1u);
   MP_CHECK(summary.raw_integrity_verified);
+  const auto run_dir = std::filesystem::path(summary.run_dir);
+  MP_CHECK_EQ(line_count(run_dir / "normalized_events.jsonl"), 4u);
+  MP_CHECK_EQ(line_count(run_dir / "factors.jsonl"), 4u);
+  MP_CHECK_EQ(line_count(run_dir / "signals.jsonl"), 4u);
+  const std::string normalized = read_text(run_dir / "normalized_events.jsonl");
+  MP_CHECK(normalized.find("\"trade_id\":\"2\"") != std::string::npos);
+  MP_CHECK(normalized.find("\"out_of_order\":true") != std::string::npos);
   std::filesystem::remove_all(root);
 }
 
@@ -217,6 +228,7 @@ MP_TEST(queue_overflow_invalidates_the_sample) {
 
 MP_TEST(sigint_stops_drains_and_finalizes) {
   reset_stop();
+  install_signal_handlers();
   const auto root = temp_root("sigint");
   LocalWsServer server(ServerMode::Basic, 100);
   CaptureConfig config = config_for(server, root, "sigint", 30.0);
@@ -232,6 +244,8 @@ MP_TEST(sigint_stops_drains_and_finalizes) {
   MP_CHECK(summary.stopped_by_signal);
   MP_CHECK(summary.result == RunResult::Fail);
   MP_CHECK(summary.frames_received > 0);
+  MP_CHECK(summary.duration_actual_seconds < 2.0);
+  MP_CHECK(!summary.quality_checks["duration_meets_target"]);
   MP_CHECK_EQ(summary.raw_frames_records, summary.frames_received);
   MP_CHECK_EQ(summary.trades_processed, summary.frames_received);
   MP_CHECK(summary.raw_integrity_verified);
@@ -242,8 +256,34 @@ MP_TEST(sigint_stops_drains_and_finalizes) {
   std::filesystem::remove_all(root);
 }
 
+MP_TEST(early_stop_is_not_rescued_by_drain_time) {
+  reset_stop();
+  install_signal_handlers();
+  const auto root = temp_root("drain");
+  LocalWsServer server(ServerMode::Burst, 200);
+  CaptureConfig config = config_for(server, root, "drain", 10.0);
+  config.test_processing_delay_us = 10000;  // ~2 s of drain after the stop
+  CaptureSummary summary;
+  int exit_code = -1;
+  std::thread runner([&] { exit_code = run_capture(config, summary); });
+  std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  std::raise(SIGTERM);
+  runner.join();
+  server.stop();
+
+  MP_CHECK_EQ(exit_code, 130);
+  MP_CHECK(summary.result == RunResult::Fail);
+  MP_CHECK(summary.duration_actual_seconds < 1.0);
+  MP_CHECK(summary.drain_elapsed_seconds > summary.duration_actual_seconds);
+  MP_CHECK(summary.processing_elapsed_seconds > summary.duration_actual_seconds);
+  MP_CHECK(!summary.quality_checks["duration_meets_target"]);
+  reset_stop();
+  std::filesystem::remove_all(root);
+}
+
 MP_TEST(sigterm_stops_drains_and_finalizes) {
   reset_stop();
+  install_signal_handlers();
   const auto root = temp_root("sigterm");
   LocalWsServer server(ServerMode::Burst, 200);
   CaptureConfig config = config_for(server, root, "sigterm", 20.0);

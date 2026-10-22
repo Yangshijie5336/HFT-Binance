@@ -13,6 +13,7 @@ data/runs/*
 data/smoke/
 data/benchmarks/
 data/replays/
+data/review-evidence/
 *.log
 .marketpipe-test-tmp/
 .marketpipe-test-tmp*

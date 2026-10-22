@@ -1,0 +1,7 @@
+工具: ThreadSanitizer (GCC 11.4, Ubuntu 22.04 WSL2)
+构建: -fsanitize=thread -fno-omit-frame-pointer -g -O1
+unit: 21/21 通过
+integration capture_end_to_end: 1/1 通过
+integration queue_overflow: 1/1 通过
+race_reports: 0
+note: 运行时使用 setarch x86_64 -R 关闭 ASLR 以适配 TSan
