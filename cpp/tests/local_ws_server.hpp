@@ -7,6 +7,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <iostream>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -46,6 +47,7 @@ class LocalWsServer {
     acceptor_.set_option(asio::socket_base::reuse_address(true));
     acceptor_.bind(endpoint);
     acceptor_.listen();
+    acceptor_.non_blocking(true);
     port_ = acceptor_.local_endpoint().port();
     thread_ = std::thread([this] { run(); });
   }
@@ -63,17 +65,19 @@ class LocalWsServer {
 
   void stop() {
     if (stopped_.exchange(true)) return;
-    boost::system::error_code ec;
-    acceptor_.close(ec);
     if (thread_.joinable()) thread_.join();
   }
 
  private:
   void run() {
     while (!stopped_.load()) {
-      tcp::socket socket(acceptor_.get_executor());
+      tcp::socket socket(io_);
       boost::system::error_code ec;
       acceptor_.accept(socket, ec);
+      if (ec == asio::error::would_block || ec == asio::error::try_again) {
+        std::this_thread::sleep_for(10ms);
+        continue;
+      }
       if (ec) break;
       connections_.fetch_add(1);
       try {
@@ -82,6 +86,8 @@ class LocalWsServer {
         // Test server deliberately ignores per-connection failures.
       }
     }
+    boost::system::error_code ignored;
+    acceptor_.close(ignored);
   }
 
   std::vector<std::string> frames_for(int connection) {
@@ -103,21 +109,25 @@ class LocalWsServer {
   void handle(tcp::socket socket) {
     const int connection = connections_.load();
     if (mode_ == ServerMode::Http451) {
+      beast::tcp_stream stream(std::move(socket));
+      stream.expires_after(2s);
       char request[4096];
       boost::system::error_code ignored;
-      socket.read_some(asio::buffer(request), ignored);
+      stream.read_some(asio::buffer(request), ignored);
+      stream.expires_never();
       const std::string response =
           "HTTP/1.1 451 Unavailable For Legal Reasons\r\n"
           "Content-Length: 0\r\nConnection: close\r\n\r\n";
-      asio::write(socket, asio::buffer(response), ignored);
-      socket.shutdown(tcp::socket::shutdown_both, ignored);
-      socket.close(ignored);
+      asio::write(stream, asio::buffer(response), ignored);
+      stream.socket().shutdown(tcp::socket::shutdown_both, ignored);
+      stream.socket().close(ignored);
       return;
     }
 
     beast::websocket::stream<beast::tcp_stream> ws(std::move(socket));
+    ws.next_layer().expires_after(2s);
     ws.accept();
-    beast::get_lowest_layer(ws).expires_never();
+    ws.next_layer().expires_never();
     const auto frames = frames_for(connection);
     for (const auto& frame : frames) {
       if (stopped_.load()) break;
@@ -137,7 +147,8 @@ class LocalWsServer {
   ServerMode mode_;
   std::size_t count_;
   std::vector<std::string> scripted_frames_;
-  tcp::acceptor acceptor_{asio::system_executor()};
+  asio::io_context io_;
+  tcp::acceptor acceptor_{io_};
   std::uint16_t port_{};
   std::thread thread_;
   std::atomic<bool> stopped_{false};

@@ -1225,7 +1225,6 @@ int run_capture(const CaptureConfig& config, CaptureSummary& summary) {
       std::uint64_t log_budget = 50;
       ProcessItem item;
       while (process_queue.pop(item)) {
-        const std::int64_t process_start = steady_ns();
         ParseContext context;
         context.run_id = run_id;
         context.connection_id = item.frame.connection_id;

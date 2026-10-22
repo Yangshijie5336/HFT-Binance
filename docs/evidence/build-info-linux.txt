@@ -1,0 +1,7 @@
+linux_distribution=Ubuntu 22.04 (WSL2)
+compiler=g++ 11.4.0
+cmake=3.22.1
+ninja=1.10.1
+boost=1.74
+openssl=3.0.2
+ctest=4/4 passed

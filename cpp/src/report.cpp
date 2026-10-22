@@ -44,8 +44,6 @@ double double_member(const json::Value& object, const char* key, double fallback
   return fallback;
 }
 
-std::string quote(const std::string& text) { return "\"" + json::escape(text) + "\""; }
-
 struct Check {
   std::string name;
   bool ok{false};

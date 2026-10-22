@@ -1,6 +1,7 @@
 #pragma once
 
 #include <exception>
+#include <cstdlib>
 #include <functional>
 #include <iostream>
 #include <sstream>
@@ -33,7 +34,11 @@ struct Registrar {
 
 inline int run_all(const char* suite) {
   int failed = 0;
+  int ran = 0;
+  const char* filter = std::getenv("MP_TEST_FILTER");
   for (const auto& test : registry()) {
+    if (filter && *filter && test.name.find(filter) == std::string::npos) continue;
+    ++ran;
     try {
       test.function();
       std::cout << "[PASS] " << suite << "." << test.name << '\n';
@@ -49,8 +54,7 @@ inline int run_all(const char* suite) {
       ++failed;
     }
   }
-  std::cout << suite << ": " << registry().size() - static_cast<std::size_t>(failed) << "/"
-            << registry().size() << " passed\n";
+  std::cout << suite << ": " << ran - failed << "/" << ran << " passed\n";
   return failed == 0 ? 0 : 1;
 }
 

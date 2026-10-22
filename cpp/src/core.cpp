@@ -423,7 +423,12 @@ int replay(const std::filesystem::path& input, const std::filesystem::path& outp
       if (payload_node && payload_node->is_string()) {
         payload = payload_node->text;
         const json::Value* generation_node = record.find("connection_generation");
-        if (generation_node) json::to_uint64(*generation_node, generation);
+        if (generation_node) {
+          unsigned long long parsed_generation = 0;
+          if (json::to_uint64(*generation_node, parsed_generation)) {
+            generation = parsed_generation;
+          }
+        }
         const json::Value* received_node = record.find("received_utc");
         if (received_node && received_node->is_string()) received_utc = received_node->text;
       }

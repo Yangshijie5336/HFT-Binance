@@ -173,7 +173,14 @@ reconnect generation isolation, duplicate/out-of-order trades, bounded queue ove
 SIGINT and SIGTERM drain/finalize, HTTP 451 handling, simulated disk-full, final-fsync
 failure, tampered raw file detection, replay parity and connection refusal. None of these
 tests uses the Binance network. Raw CTest output is in
-[`docs/evidence/ctest-last.txt`](evidence/ctest-last.txt).
+[`docs/evidence/ctest-windows.txt`](evidence/ctest-windows.txt).
+
+### Linux cross-check (WSL2 Ubuntu 22.04)
+
+The same commit was configured and built with GCC 11.4 / CMake 3.22.1 / Ninja 1.10.1 /
+Boost 1.74 / OpenSSL 3.0.2, and CTest passed 4/4 (18 unit, 14 integration, 100k
+benchmark) in 21.93 s. This caught and fixed a Linux-only test-server shutdown bug before
+commit; see [`docs/evidence/ctest-linux.txt`](evidence/ctest-linux.txt).
 
 ## Docker and CI status
 
@@ -182,8 +189,8 @@ tests uses the Binance network. Raw CTest output is in
 - **Docker was not executed locally** because this Windows host has no Docker engine or
   `docker` CLI. Do not claim a locally verified image. The CI workflow builds the image
   and verifies it starts as non-root.
-- GitHub Actions workflows are committed. This session did not produce a GitHub Actions
-  run URL; CI evidence must be taken from the actual run once pushed.
+- The Linux build/CTest path used by CI was executed in WSL2 and passed 4/4, but GitHub
+  Actions itself was not run in this session; no Actions run URL or artifact is claimed.
 
 ## Reproduction
 
