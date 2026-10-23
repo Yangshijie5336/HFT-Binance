@@ -179,7 +179,8 @@ Total Test time (real) = 24.56 sec
 ## Docker 与 CI 状态
 
 - 已实现多阶段 Dockerfile、非 root UID 10001、命名卷 `marketpipe-data`、构建阶段 CTest 和 `STOPSIGNAL SIGTERM`。
-- **本机未实际执行 Docker**：当前 Windows 环境没有 Docker 引擎或 `docker` CLI。不能声称本地镜像已验证。CI 工作流会构建镜像并验证其以非 root 启动。
+- Windows Docker Desktop 已实际恢复并验证：`docker build -t marketpipe-hft-demo:0.3.0 .` 成功，镜像摘要为 `sha256:07b215d6e2824b543afaa3bf2cae9374ef6dd9b6f88780101d4015f11b7ca947`；默认帮助命令通过，UID 10001 执行 1,000 事件 pipeline benchmark 通过，输出明确标记 `SYNTHETIC_BENCHMARK`/`live_network:false`。
+- Compose 默认命令是 900 秒 `capture`；运行短暂容器冒烟时应显式覆盖命令，例如 `docker compose run --rm marketpipe benchmark --events 1000 --mode pipeline`。本次 compose 冒烟采样已在确认后优雅停止，不计入公网 900 秒验收结果。
 - CI 使用的 Linux 构建/CTest 路径已在 WSL2 实际执行并通过 4/4。
 - 提交已推送到 `origin/main`，因此 GitHub Actions 工作流由推送触发。仓库的 Actions 页面/API 需要认证，本环境没有已登录的 `gh` 或可用令牌，因此**不声称任何 Actions Run URL、状态或产物**。CI 证据必须从推送后的实际 Actions 运行中读取。
 
