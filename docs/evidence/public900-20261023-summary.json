@@ -1,0 +1,21 @@
+{
+  "run_id": "public900-BTCUSDT-20261023",
+  "result": "PASS",
+  "started_utc": "2026-10-23T09:28:04.962673000Z",
+  "finished_utc": "2026-10-23T09:43:05.390938900Z",
+  "duration_target_seconds": 900,
+  "duration_actual_seconds": 900.0712497,
+  "frames_received": 29140,
+  "trades_processed": 29140,
+  "signals_emitted": 29140,
+  "raw_frames_bytes": 23382704,
+  "raw_frames_sha256": "37753e2b03cac5f8520518585e97166842c95921c2625afecc0ff44ee5cb7cb7",
+  "reconnects": 0,
+  "duplicates": 0,
+  "out_of_order": 0,
+  "queue_overflow": false,
+  "persistence_error": false,
+  "raw_integrity_verified": true,
+  "throughput_trades_per_second": 32.37521475073508,
+  "rss_bytes_peak": 39718912
+}
