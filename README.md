@@ -90,6 +90,21 @@ marketpipe report    --run-dir data/runs/<run>
 marketpipe synthetic --events 100000        # 旧版仅因子基准
 ```
 
+### 可复现离线运行入口
+
+在 Windows PowerShell 中执行：
+
+```powershell
+.\scripts\run_reproducible.ps1
+```
+
+该入口自动构建并运行 CTest，使用仓库固定的
+`tests/fixtures/reproducible_raw_frames.jsonl` 执行两次 replay，比较
+`normalized_events.jsonl`、`factors.jsonl` 和 `signals.jsonl` 的 SHA-256，
+并在 `data/reproducible/summary.json` 写入提交 SHA、fixture 哈希、命令和比较结果。
+默认还执行 100,000 事件的合成基准；如只验证确定性回放可使用
+`-SkipBenchmark`。该模式不访问 Binance，结果不会被公网、当前时间或网络状态改变。
+
 `capture` 默认 900 秒、`BTCUSDT`、`wss://stream.binance.com:9443/ws/btcusdt@trade`。常用参数：
 
 | 参数 | 含义 |
