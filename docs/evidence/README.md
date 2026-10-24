@@ -1,6 +1,6 @@
 # 验收证据目录
 
-本目录只保存小型、可提交的验收证据。大型 raw/派生数据保留在 `data/runs/`，并通过 GitHub Release `v0.3.0` 的 `public900-BTCUSDT-20261023.zip` 交付，不直接提交到 Git。
+本目录只保存小型、可提交的验收证据。大型 raw/派生数据保留在 `data/runs/`，并通过 [GitHub Release v0.3.0](https://github.com/Yangshijie5336/HFT-Binance/releases/tag/v0.3.0) 的 `public900-BTCUSDT-20261023.zip` 交付，不直接提交到 Git。
 
 ## 主验收样本：public900-BTCUSDT-20261023
 

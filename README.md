@@ -163,18 +163,23 @@ CTest 覆盖：
 
 ## Docker
 
-镜像为多阶段构建，以 UID 10001 非 root 运行，只写 `/app/data`；构建阶段执行 CTest。
+公共镜像：`ghcr.io/yangshijie5336/marketpipe-hft-demo:v0.3.0`（非 root UID 10001）。
 
 ```bash
+docker pull ghcr.io/yangshijie5336/marketpipe-hft-demo:v0.3.0
+docker run --rm ghcr.io/yangshijie5336/marketpipe-hft-demo:v0.3.0 --help
 docker compose build
 docker compose run --rm marketpipe
 ```
 
-Compose 使用命名卷 `marketpipe-data`（挂载到 `/app/data`），采集数据在容器删除后仍保留且对非 root UID 可写。优雅 `SIGTERM` 会排空队列并 fsync（`stop_grace_period: 60s`）。如需改用宿主目录，请确保 UID 10001 可写，或覆盖 compose 的 `user:`。
+镜像为多阶段构建，只写 `/app/data`；构建阶段执行 CTest。Compose 使用命名卷 `marketpipe-data`（挂载到 `/app/data`），采集数据在容器删除后仍保留且对非 root UID 可写。优雅 `SIGTERM` 会排空队列并 fsync（`stop_grace_period: 60s`）。如需改用宿主目录，请确保 UID 10001 可写，或覆盖 compose 的 `user:`。
 
 ## 证据与 CI
 
-CI 会构建、运行 CTest（含本地 WebSocket 集成测试）、执行 100,000 事件基准、构建 Docker 镜像并上传测试/基准证据。真实采样为手工工作流，会以 产物形式上传运行目录。大型原始采样、日志和凭据不会提交到 Git。
+CI 会构建、运行 CTest（含本地 WebSocket 集成测试）、执行 100,000 事件基准、构建 Docker 镜像并上传测试/基准证据。真实采样为手工工作流，会以产物形式上传运行目录。大型原始采样、日志和凭据不会提交到 Git。
+
+- 最新 CI：<https://github.com/Yangshijie5336/HFT-Binance/actions/runs/40057231538>
+- Release 与原始数据：<https://github.com/Yangshijie5336/HFT-Binance/releases/tag/v0.3.0>
 
 - [架构与线程安全](docs/architecture.md)
 - [CLI、文件与 JSON 接口](docs/interfaces.md)

@@ -1,9 +1,24 @@
 # 交付报告（精简版）
 
+## 0. 要求对照
+
+| 要求 | 状态 | 证据 |
+|---|---|---|
+| GitHub 公开仓库 | 已满足 | <https://github.com/Yangshijie5336/HFT-Binance> |
+| 架构/接口文档同步归档 | 已满足 | [architecture.md](architecture.md)、[interfaces.md](interfaces.md) 已在 `main` |
+| Docker 镜像可运行 | 已满足 | 公共镜像 `ghcr.io/yangshijie5336/marketpipe-hft-demo:v0.3.0`，UID 10001 |
+| 采样原始数据 | 已满足 | Release asset `public900-BTCUSDT-20261023.zip` |
+| 性能验证文档 | 已满足 | [performance.md](performance.md)、[acceptance_report.md](acceptance_report.md) |
+| 结果可复现入口 | 已满足 | `scripts/run_reproducible.ps1`、CLI replay/benchmark/report、Docker |
+| 精简完整报告 | 已满足 | 本文件（架构取舍、AI 协作、验证与限制） |
+
 ## 1. 项目地址与交付物
 
 - GitHub 公开仓库：<https://github.com/Yangshijie5336/HFT-Binance>
 - 默认分支：`main`
+- Release：<https://github.com/Yangshijie5336/HFT-Binance/releases/tag/v0.3.0>
+- 原始数据 asset：<https://github.com/Yangshijie5336/HFT-Binance/releases/download/v0.3.0/public900-BTCUSDT-20261023.zip>（5,069,750 字节，zip SHA-256 `717d7afa8cac1c673da5f36701cf99f98f99a14b7f90cc1b5922fa27dc198145`）
+- 公共 Docker 镜像：`ghcr.io/yangshijie5336/marketpipe-hft-demo:v0.3.0`，公共 digest `sha256:343e091956f492d09ad75b2f707438ab6899a92dcf76d70692e5618085caab64`
 - 架构设计：[architecture.md](architecture.md)
 - 接口文档：[interfaces.md](interfaces.md)
 - 运行手册：[runbook.md](runbook.md)
@@ -12,8 +27,7 @@
 - 验收报告：[acceptance_report.md](acceptance_report.md)
 - 实验/研究材料：[research/](research/)
 
-Release `v0.3.0` 提供 900 秒 PASS 采样的完整 raw 与派生数据压缩包（不把大文件直接放进 Git）：
-`public900-BTCUSDT-20261023.zip`。该样本的 raw SHA-256 为
+Release `v0.3.0` 的 zip 包含 900 秒 PASS 采样的完整 raw、派生 JSONL、日志、summary、verification 和性能报告，不把大文件直接放进 Git。该样本的 raw SHA-256 为
 `37753e2b03cac5f8520518585e97166842c95921c2625afecc0ff44ee5cb7cb7`。
 
 ## 2. 系统边界与架构决策
@@ -61,10 +75,11 @@ AI 负责：搭建 C++20/CMake 工程、实现 Beast TLS WebSocket、双有界�
 | Linux WSL2 CTest | 4/4 通过，21.80 s | [ctest-linux.txt](evidence/ctest-linux.txt) |
 | ThreadSanitizer | 21/21 单元 + 基础采集/队列溢出场景，无竞态报告 | [tsan.txt](evidence/tsan.txt) |
 | 回放完整性 | 坏哈希/非法 JSON/时间倒退返回 2；有效 raw 使用保存时间，实时/回放因子与信号差异 0 | [replay-regression.txt](evidence/replay-regression.txt)、[replay-parity.txt](evidence/replay-parity.txt) |
-| Docker | 镜像 `marketpipe-hft-demo:0.3.0`，摘要 `sha256:07b215d6e2824b543afaa3bf2cae9374ef6dd9b6f88780101d4015f11b7ca947`，UID 10001，Compose 烟测通过 | 本报告第 6 节 |
+| Docker | 公共镜像 `ghcr.io/yangshijie5336/marketpipe-hft-demo:v0.3.0`，digest `sha256:343e091956f492d09ad75b2f707438ab6899a92dcf76d70692e5618085caab64`，UID 10001，`--help`/benchmark 通过 | 本报告第 6 节 |
 | 公网 900 秒 PASS | 29,140 帧/成交，900.0712 s，0 重连/丢弃/持久化错误，raw SHA 见上 | [public900 证据](evidence/public900-20261023-summary.json) |
 | 另一轮公网采样 | 55,463 帧，但因上游 TLS 中断 11 次重连、最大潜在缺口 95.96 s，如实为 PARTIAL | 本地 `data/runs/live900-BTCUSDT-20261022-v3/` |
-| GitHub Actions | 最近 main CI 运行成功 | <https://github.com/Yangshijie5336/HFT-Binance/actions/runs/39953426824> |
+| GitHub Actions CI | `main` 构建、CTest、100k 基准、Docker 构建成功 | <https://github.com/Yangshijie5336/HFT-Binance/actions/runs/40057231538> |
+| GHCR 发布 | tag `v0.3.0` 触发的镜像发布成功，公共可拉取 | <https://github.com/Yangshijie5336/HFT-Binance/actions/runs/40057249754> |
 
 900 秒 PASS 样本的关键指标：实际采样 **900.0712497 秒**，排空 0.0352 秒，29,140
 帧/成交/信号，队列峰值 569/65,536，CPU 均值 0.311%，RSS 峰值 39,718,912 B，
@@ -73,15 +88,15 @@ AI 负责：搭建 C++20/CMake 工程、实现 Beast TLS WebSocket、双有界�
 ## 6. Docker 复现
 
 ```bash
-docker build -t marketpipe-hft-demo:0.3.0 .
-docker run --rm marketpipe-hft-demo:0.3.0 --help
-docker run --rm --entrypoint id marketpipe-hft-demo:0.3.0
+docker pull ghcr.io/yangshijie5336/marketpipe-hft-demo:v0.3.0
+docker run --rm ghcr.io/yangshijie5336/marketpipe-hft-demo:v0.3.0 --help
+docker run --rm --entrypoint id ghcr.io/yangshijie5336/marketpipe-hft-demo:v0.3.0
 docker compose run --rm marketpipe benchmark --events 1000 --mode pipeline
 ```
 
-已验证输出为 `uid=10001(marketpipe)`，benchmark 明确标记 `SYNTHETIC_BENCHMARK` 和
-`live_network:false`。Compose 默认命令是 900 秒 capture；短烟测必须显式覆盖命令，
-避免误启动长采样。
+已验证公共镜像输出 `uid=10001(marketpipe)`，benchmark 明确标记
+`SYNTHETIC_BENCHMARK` 和 `live_network:false`。Compose 默认命令是 900 秒 capture；
+短烟测必须显式覆盖命令，避免误启动长采样。
 
 ## 7. 可复现入口
 
@@ -113,4 +128,4 @@ summary、verification、SHA 和报告。
 - 策略是确定性标签示例，窗口内可能全部为 HOLD；不代表收益能力。
 - 单主机、单时间窗口的结果不能证明长期可靠性或交易所侧完整性；重连缺口只能标记。
 - GitHub Actions 运行成功不等于公网行情永远可达；公网采样仍需按运行时资格执行。
-- Docker 镜像已在本地验证；若需要公共镜像仓库，需在具备 package 权限的环境推送 GHCR。
+- 公共 GHCR 镜像已发布；私有网络或受限环境仍需按组织策略配置 registry 访问。
