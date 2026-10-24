@@ -1,5 +1,8 @@
 # MarketPipe HFT Demo — C++20 Binance 公共逐笔成交采集器
 
+- 公开项目地址：<https://github.com/Yangshijie5336/HFT-Binance>
+- 交付报告（架构取舍、AI 协作、验证证据）：[docs/delivery_report.md](docs/delivery_report.md)
+
 一个单进程 C++20 行情数据工程示例：采集 **Binance Spot `btcusdt@trade` WebSocket** 公开逐笔成交，持久化每一个原始帧，解析与校验成交，计算滚动成交流因子，输出确定性的 `BUY_SIGNAL` / `SELL_SIGNAL` / `HOLD` 标签，并生成可核验的性能报告。
 
 > **安全边界：** 仅使用公开行情。没有 API Key、私有接口、下单或执行路径。`BUY_SIGNAL` / `SELL_SIGNAL` 只是标签。
@@ -8,15 +11,15 @@ Python 参考实现已经删除，仓库现在只保留 C++20 / CMake / Ninja �
 
 ## 最新验收结果
 
-最终 900 秒真实采样（`live900-BTCUSDT-20261022-v2`）结果为 **PASS**：
+最新公网 900 秒采样（`public900-BTCUSDT-20261023`）结果为 **PASS**：
 
-- 实际采样 **900.0715 秒**（严格达到目标；排空 0.0426 秒单独记录）。
-- 32,499 个原始帧全部落盘，32,499 笔成交全部处理；0 重连、0 断开、0 队列溢出、0 丢弃、0 持久化/处理错误。
+- 实际采样 **900.0712 秒**（严格达到目标；排空 0.0352 秒单独记录）。
+- 29,140 个原始帧全部落盘，29,140 笔成交全部处理；0 重连、0 断开、0 队列溢出、0 丢弃、0 持久化/处理错误。
 - 原始文件 SHA-256：
-  `7495d8d0fdc92840ee0ccacb1646e9a4a0467ede175781400cee820be66a5301`，已由 `verification.json` 独立复核。
-- 全部 11 项质量门禁通过；详见 [验收报告](docs/acceptance_report.md) 与 [证据目录](docs/evidence/)。
+  `37753e2b03cac5f8520518585e97166842c95921c2625afecc0ff44ee5cb7cb7`，已由 `verification.json` 独立复核。
+- 全部 11 项质量门禁通过；详见 [验收报告](docs/acceptance_report.md)、[交付报告](docs/delivery_report.md) 与 [证据目录](docs/evidence/)。
 
-大型原始/派生文件保留在被 Git 忽略的 `data/runs/` 或 CI 产物中，不提交到源码仓库。
+大型原始/派生文件保留在被 Git 忽略的 `data/runs/`、Release asset 或 CI 产物中，不提交到源码仓库。
 
 ## 架构
 
@@ -179,3 +182,4 @@ CI 会构建、运行 CTest（含本地 WebSocket 集成测试）、执行 100,0
 - [故障处理](docs/troubleshooting.md)
 - [性能方法与实测结果](docs/performance.md)
 - [验收报告](docs/acceptance_report.md)
+- [交付报告（精简）](docs/delivery_report.md)
